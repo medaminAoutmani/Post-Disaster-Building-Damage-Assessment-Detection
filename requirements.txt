@@ -1,0 +1,7 @@
+opencv-python
+matplotlib
+numpy
+shapely
+albumentations
+torch
+torchvision
