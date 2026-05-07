@@ -102,7 +102,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Report Week 3 dataset cleaning statistics.")
     parser.add_argument("--data-dir", type=Path, default=Path("data"))
     parser.add_argument("--split", type=str, default="train")
-    parser.add_argument("--output-dir", type=Path, default=Path("outputs") / "logs")
+    parser.add_argument("--output-dir", type=Path, default=Path("results") / "week3" / "metrics")
     parser.add_argument("--output-file", type=Path, default=None)
     args = parser.parse_args()
 

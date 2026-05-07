@@ -1,8 +1,0 @@
-{
-  "best_epoch": 19,
-  "train_dice": 0.6678,
-  "val_dice": 0.6946,
-  "val_iou": 0.5512,
-  "val_precision": 0.719,
-  "val_recall": 0.7125
-}

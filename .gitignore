@@ -5,17 +5,11 @@ data/
 *.7z
 *.rar
 
-# Training outputs and generated artifacts
-outputs/checkpoints/
-outputs/predictions/
-outputs/masks/
-*.pt
-*.pth
-*.ckpt
+
 
 # Keep lightweight report/log CSV files if you choose to commit them.
 # Uncomment the next line if you want to ignore every generated output.
-# outputs/
+# results/
 
 # Python caches
 __pycache__/

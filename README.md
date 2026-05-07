@@ -19,10 +19,9 @@ splits/
 +-- train.txt
 +-- val.txt
 +-- test.txt
-outputs/
-+-- logs/
-+-- visualizations/
 results/
++-- week1/
++-- week2/
 +-- week3/
 ```
 
@@ -56,13 +55,13 @@ Train Week 3 improved baseline:
 python src\week3_train.py --epochs 20 --batch-size 4 --image-size 512
 ```
 
-By default, Week 3 saves reproducibility artifacts to:
+By default, experiment artifacts are saved under:
 
 ```text
-results/week3/
+results/
 ```
 
-This includes final metrics, training logs, training curves, qualitative prediction panels, model checkpoints, dataset statistics, config files, and a failure-analysis template.
+This keeps Week 1 visualizations, Week 2 baseline checkpoints, and Week 3 metrics, prediction panels, config files, checkpoints, and failure-analysis notes together in one results tree.
 
 Run Week 3 overfit test:
 

@@ -368,7 +368,7 @@ def run_sample(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run Week 1 xBD visualization and mask generation.")
     parser.add_argument("--data-dir", type=Path, default=Path("data"))
-    parser.add_argument("--output-dir", type=Path, default=Path("outputs") / "visualizations")
+    parser.add_argument("--output-dir", type=Path, default=Path("results") / "week1" / "visualizations")
     parser.add_argument("--split", type=str, default="train")
     parser.add_argument("--sample-id", type=str, default=None, help="Example: guatemala-volcano_00000000")
     parser.add_argument("--overlay-alpha", type=float, default=0.35, help="Transparent polygon fill strength.")

@@ -1,9 +1,14 @@
-﻿Project tree (data/, outputs/, .git/, caches, and local IDE files omitted)
+Project tree (data/, .git/, caches, and local IDE files omitted)
 .
 +---notebooks
 |   +---week2_training_prep.ipynb
 |   \---xbd_exploration.ipynb
 +---results
+|   +---week1
+|   |   \---visualizations
+|   +---week2
+|   |   +---checkpoints
+|   |   \---predictions
 |   \---week3
 |       +---checkpoints
 |       |   \---.gitkeep
@@ -11,7 +16,8 @@
 |       |   \---training_config.yaml
 |       +---metrics
 |       |   +---dataset_statistics.csv
-|       |   \---final_metrics.json
+|       |   +---final_metrics.json
+|       |   \---week3_train_dataset_statistics.csv
 |       +---notebooks
 |       |   \---week3_analysis.ipynb
 |       +---predictions

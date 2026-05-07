@@ -16,8 +16,8 @@ The current project focuses on binary building segmentation. This means the mode
 The full pipeline is divided into three stages:
 
 1. Week 1: Data exploration, preprocessing, visualization, and mask generation
-2. Week 2: Dataset pipeline, train/validation/test splits, and the first baseline U-Net
-3. Week 3: A separate improved baseline with cleaner data, stronger training, prediction visualization, overfit testing, and better metrics
+2. Week 2: Dataset pipeline, train/validation/test splits, and baseline U-Net training
+3. Week 3: Dataset cleaning, stronger training setup, prediction visualization, overfit testing, and better metrics
 
 ## Week 1: Preprocessing and Data Understanding
 
@@ -67,7 +67,7 @@ Week 1 verifies that the raw dataset is being read correctly. In segmentation pr
 
 ## Week 2: Baseline Segmentation Pipeline
 
-Week 2 turned the preprocessing work into the first PyTorch training pipeline.
+Week 2 turned the preprocessing work into a PyTorch training pipeline.
 
 The main scripts for this stage are:
 
@@ -100,7 +100,7 @@ splits/val.txt
 splits/test.txt
 ```
 
-### Week 2 Data Augmentation
+### Data Augmentation
 
 Albumentations is used for resizing, normalization, tensor conversion, and training augmentation. The pipeline includes:
 
@@ -110,14 +110,13 @@ Albumentations is used for resizing, normalization, tensor conversion, and train
 - Random 90-degree rotation
 - Shift, scale, and rotation
 - Brightness and contrast adjustment
+- Blur or noise augmentation
 
 These augmentations are useful because satellite images can vary in orientation, lighting, resolution, and image quality.
 
-The shared dataset code supports Week 3 augmentation too, but `src/week2_train_baseline.py` explicitly runs with the Week 2 augmentation setting so the original baseline stays comparable.
+### Baseline Model
 
-### Week 2 Baseline Model
-
-The Week 2 model is the first compact U-Net baseline implemented in:
+The baseline model is a compact U-Net implemented in:
 
 ```text
 src/week2_model.py
@@ -129,18 +128,11 @@ U-Net is a standard architecture for image segmentation. It uses an encoder-deco
 - The decoder upsamples features back to mask resolution.
 - Skip connections help preserve fine spatial details such as building boundaries.
 
-The model input has 6 channels and the output has 1 channel for binary segmentation logits. This model is intentionally kept as the simple baseline so later experiments can be compared against it.
+The model input has 6 channels and the output has 1 channel for binary segmentation logits.
 
 ### Initial Training
 
-The Week 2 training script trains the first U-Net baseline and saves the best checkpoint:
-
-```text
-src/week2_train_baseline.py
-outputs/checkpoints/week2_unet_binary_best.pt
-```
-
-This baseline provided the first end-to-end test of:
+The Week 2 training script trains the U-Net baseline and saves the best checkpoint. The baseline provided the first end-to-end test of:
 
 - Image loading
 - Mask generation
@@ -151,31 +143,19 @@ This baseline provided the first end-to-end test of:
 - Validation Dice score
 - Checkpoint saving
 
-The Week 2 training setup uses `BCEWithLogitsLoss`, reports loss and Dice, and defaults to a short training run. This stage confirmed that the project had a working segmentation training loop.
+This stage confirmed that the project had a working segmentation training loop.
 
 ## Week 3: Cleaning, Debugging, and Reliability
 
-Week 3 does not overwrite the Week 2 baseline. Instead, it creates a separate improved baseline so the project can compare the original model against the upgraded system.
+Week 3 focused on making the baseline cleaner, more reliable, and easier to evaluate.
 
 The main additions and updates are:
 
 ```text
 src/week3_dataset_statistics.py
-src/week3_model.py
-src/week3_train.py
+src/week2_train_baseline.py
 src/week2_dataset.py
 ```
-
-`week2_model.py` and `week2_train_baseline.py` remain the Week 2 baseline. `week3_model.py` and `week3_train.py` are the improved Week 3 model path.
-
-### Model Separation
-
-| Stage | Model file | Training file | Checkpoint |
-|---|---|---|---|
-| Week 2 baseline | `src/week2_model.py` | `src/week2_train_baseline.py` | `outputs/checkpoints/week2_unet_binary_best.pt` |
-| Week 3 improved baseline | `src/week3_model.py` | `src/week3_train.py` | `results/week3/checkpoints/week3_unet_binary_best.pt` |
-
-The two model files currently share the same compact U-Net architecture, but they are intentionally separated. This keeps the Week 2 baseline stable while allowing Week 3 to add improved training, metrics, debugging tools, and future architecture changes without changing the original experiment.
 
 ## Dataset Cleaning
 
@@ -202,7 +182,7 @@ src/week3_dataset_statistics.py
 It saves a report-friendly CSV file to:
 
 ```text
-results/week3/metrics/dataset_statistics.csv
+outputs/logs/week3_train_dataset_statistics.csv
 ```
 
 Current training dataset statistics:
@@ -225,9 +205,9 @@ Current training dataset statistics:
 
 These statistics are useful for the research/report section because they describe the quality and class distribution of the training data.
 
-## Week 3 Improved Loss Function
+## Improved Loss Function
 
-The Week 3 training script now uses a combined BCE + Dice loss:
+The training script now uses a combined BCE + Dice loss:
 
 ```text
 loss = 0.5 * BCEWithLogitsLoss + 0.5 * DiceLoss
@@ -235,13 +215,9 @@ loss = 0.5 * BCEWithLogitsLoss + 0.5 * DiceLoss
 
 BCE helps the model classify individual pixels correctly. Dice loss helps optimize overlap between the predicted mask and the ground truth mask. This combination is common in segmentation because it handles both pixel-level accuracy and mask-level shape quality.
 
-## Week 3 Better Augmentation
+## Better Metrics
 
-Week 3 keeps the Week 2 geometric and brightness augmentations, then adds blur/noise augmentation in the shared dataset pipeline. This makes the improved baseline more robust to satellite image quality differences while keeping the Week 2 runner able to use the original augmentation setup.
-
-## Week 3 Better Metrics
-
-The Week 3 validation loop reports multiple segmentation metrics:
+The validation loop now reports multiple segmentation metrics:
 
 - Dice
 - IoU
@@ -251,14 +227,14 @@ The Week 3 validation loop reports multiple segmentation metrics:
 
 Dice and F1 are equivalent in this binary segmentation setup. IoU gives a stricter overlap measure. Precision shows how many predicted building pixels are correct, while recall shows how many true building pixels were found.
 
-## Week 3 Prediction Visualization
+## Prediction Visualization
 
-The Week 3 training script saves prediction examples whenever validation Dice improves.
+The training script now saves prediction examples whenever validation Dice improves.
 
 Prediction outputs are saved in:
 
 ```text
-results/week3/predictions/
+outputs/predictions/epoch_XXX/
 ```
 
 For each sample, the script saves:
@@ -275,7 +251,7 @@ This is important because numerical metrics do not always tell the full story. V
 Week 3 also adds an overfit test mode:
 
 ```text
-python src/week3_train.py --overfit-samples 8 --epochs 50 --batch-size 2 --small-model
+python src/week2_train_baseline.py --overfit-samples 8 --epochs 50 --batch-size 2 --small-model
 ```
 
 This trains and validates on the same small set of clean samples. The model should eventually reach a very high Dice score, ideally above 0.9.
@@ -297,13 +273,11 @@ The project now follows this output structure:
 
 ```text
 outputs/
-+-- checkpoints/
-+-- logs/
-+-- masks/
-+-- predictions/
-+-- visualizations/
-results/
-+-- week3/
+├── checkpoints/
+├── logs/
+├── masks/
+├── predictions/
+└── visualizations/
 ```
 
 Each folder has a clear purpose:
@@ -315,32 +289,25 @@ Each folder has a clear purpose:
 | `outputs/masks/` | Generated or saved mask artifacts |
 | `outputs/predictions/` | Model prediction visualizations |
 | `outputs/visualizations/` | Week 1 sample visualizations |
-| `results/week3/` | Preserved Week 3 benchmark with metrics, config, curves, panels, checkpoints, dataset statistics, and failure analysis |
 
 ## How to Run the Project
 
 Create dataset statistics:
 
 ```powershell
-python src\week3_dataset_statistics.py --data-dir data --split train --output-file results\week3\metrics\dataset_statistics.csv
+python src\week3_dataset_statistics.py --data-dir data --split train --output-dir outputs\logs
 ```
 
-Train the Week 2 baseline:
+Train the Week 3 segmentation baseline:
 
 ```powershell
-python src\week2_train_baseline.py --epochs 5 --batch-size 4 --image-size 512
-```
-
-Train the Week 3 improved baseline:
-
-```powershell
-python src\week3_train.py --epochs 20 --batch-size 4 --image-size 512
+python src\week2_train_baseline.py --epochs 20 --batch-size 4 --image-size 512
 ```
 
 Run the overfit debugging test:
 
 ```powershell
-python src\week3_train.py --overfit-samples 8 --epochs 50 --batch-size 2 --small-model
+python src\week2_train_baseline.py --overfit-samples 8 --epochs 50 --batch-size 2 --small-model
 ```
 
 ## Current Project Status
@@ -351,12 +318,11 @@ The project now has a complete baseline segmentation system:
 - Building polygons are converted into segmentation masks.
 - Dataset splits are created and loaded with PyTorch.
 - Invalid and noisy samples are filtered.
-- A Week 2 U-Net baseline is available.
-- A separate Week 3 improved U-Net baseline is available.
-- Week 3 training uses BCE + Dice loss.
-- Week 3 validation reports multiple metrics.
-- Week 2 and Week 3 checkpoints are saved separately.
-- Week 3 prediction examples are saved for visual inspection.
+- A U-Net baseline is available.
+- Training uses BCE + Dice loss.
+- Validation reports multiple metrics.
+- Best checkpoints are saved.
+- Prediction examples are saved for visual inspection.
 - Dataset statistics are available for the report.
 - An overfit test is available for debugging the full pipeline.
 

@@ -101,7 +101,7 @@ def main() -> None:
     parser.add_argument("--max-train-samples", type=int, default=None, help="Use only this many training samples.")
     parser.add_argument("--max-val-samples", type=int, default=None, help="Use only this many validation samples.")
     parser.add_argument("--small-model", action="store_true", help="Use a smaller U-Net for faster CPU experiments.")
-    parser.add_argument("--checkpoint-dir", type=Path, default=Path("outputs") / "checkpoints")
+    parser.add_argument("--checkpoint-dir", type=Path, default=Path("results") / "week2" / "checkpoints")
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
