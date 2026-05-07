@@ -3,14 +3,21 @@
 from __future__ import annotations
 
 import argparse
+import csv
+import json
 from pathlib import Path
 
 import cv2
+import matplotlib
 import numpy as np
 import torch
 from torch import nn
 from torch.utils.data import DataLoader, Subset
 
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
+from week3_dataset_statistics import collect_dataset_statistics, save_metrics_csv
 from week2_dataset import XBDChangeDataset, build_dataloaders, get_transforms, read_split_file
 from week3_model import UNet
 
@@ -68,6 +75,15 @@ def binary_metrics_from_logits(logits: torch.Tensor, targets: torch.Tensor, eps:
         "recall": float(recall.mean().item()),
         "f1": float(dice.mean().item()),
     }
+
+
+def per_sample_dice_from_logits(logits: torch.Tensor, targets: torch.Tensor, eps: float = 1e-7) -> torch.Tensor:
+    """Compute one Dice score per item in a batch."""
+    predictions = (torch.sigmoid(logits) > 0.5).float()
+    true_positive = (predictions * targets).sum(dim=(1, 2, 3))
+    false_positive = (predictions * (1.0 - targets)).sum(dim=(1, 2, 3))
+    false_negative = ((1.0 - predictions) * targets).sum(dim=(1, 2, 3))
+    return (2.0 * true_positive + eps) / (2.0 * true_positive + false_positive + false_negative + eps)
 
 
 def train_one_epoch(
@@ -139,11 +155,20 @@ def save_prediction_examples(
     device: torch.device,
     output_dir: Path,
     max_examples: int = 8,
-) -> None:
-    """Save input, ground-truth, and prediction panels from validation samples."""
+) -> list[dict[str, str | float]]:
+    """Save input/ground-truth/prediction panels and return per-sample records."""
     output_dir.mkdir(parents=True, exist_ok=True)
+    category_dirs = {
+        "good_predictions": output_dir / "good_predictions",
+        "difficult_scenes": output_dir / "difficult_scenes",
+        "failure_cases": output_dir / "failure_cases",
+    }
+    for category_dir in category_dirs.values():
+        category_dir.mkdir(parents=True, exist_ok=True)
+
     model.eval()
     saved = 0
+    records: list[dict[str, str | float]] = []
 
     with torch.no_grad():
         for batch in dataloader:
@@ -151,12 +176,20 @@ def save_prediction_examples(
             logits = model(images)
             predictions = (torch.sigmoid(logits) > 0.5).float().cpu()
             masks = batch["mask"].cpu()
+            sample_dice = per_sample_dice_from_logits(logits.cpu(), masks)
             sample_ids = batch["sample_id"]
 
             for index, sample_id in enumerate(sample_ids):
                 input_image = tensor_image_to_uint8(batch["image"][index])
                 gt_mask = (masks[index, 0].numpy() * 255).astype(np.uint8)
                 pred_mask = (predictions[index, 0].numpy() * 255).astype(np.uint8)
+                dice = float(sample_dice[index].item())
+                if dice >= 0.70:
+                    category = "good_predictions"
+                elif dice >= 0.30:
+                    category = "difficult_scenes"
+                else:
+                    category = "failure_cases"
 
                 panel = np.concatenate(
                     [
@@ -166,14 +199,117 @@ def save_prediction_examples(
                     ],
                     axis=1,
                 )
-                cv2.imwrite(str(output_dir / f"{sample_id}_input_gt_pred.png"), cv2.cvtColor(panel, cv2.COLOR_RGB2BGR))
-                cv2.imwrite(str(output_dir / f"{sample_id}_input.png"), cv2.cvtColor(input_image, cv2.COLOR_RGB2BGR))
-                cv2.imwrite(str(output_dir / f"{sample_id}_gt_mask.png"), gt_mask)
-                cv2.imwrite(str(output_dir / f"{sample_id}_pred_mask.png"), pred_mask)
+                category_dir = category_dirs[category]
+                cv2.imwrite(str(category_dir / f"{sample_id}_input_gt_pred.png"), cv2.cvtColor(panel, cv2.COLOR_RGB2BGR))
+                cv2.imwrite(str(category_dir / f"{sample_id}_input.png"), cv2.cvtColor(input_image, cv2.COLOR_RGB2BGR))
+                cv2.imwrite(str(category_dir / f"{sample_id}_gt_mask.png"), gt_mask)
+                cv2.imwrite(str(category_dir / f"{sample_id}_pred_mask.png"), pred_mask)
+                records.append({"sample_id": sample_id, "dice": dice, "category": category})
 
                 saved += 1
                 if saved >= max_examples:
-                    return
+                    return records
+
+    return records
+
+
+def save_prediction_records(records: list[dict[str, str | float]], output_path: Path) -> None:
+    """Save per-sample qualitative result categories and Dice scores."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", newline="", encoding="utf-8") as file:
+        writer = csv.DictWriter(file, fieldnames=["sample_id", "dice", "category"])
+        writer.writeheader()
+        writer.writerows(records)
+
+
+def save_history_csv(history: list[dict[str, float | int]], output_path: Path) -> None:
+    """Save epoch-level training logs."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    if not history:
+        return
+    with output_path.open("w", newline="", encoding="utf-8") as file:
+        writer = csv.DictWriter(file, fieldnames=list(history[0].keys()))
+        writer.writeheader()
+        writer.writerows(history)
+
+
+def save_json(data: dict, output_path: Path) -> None:
+    """Save a JSON file with stable formatting."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def plot_training_curves(history: list[dict[str, float | int]], output_dir: Path) -> None:
+    """Save loss and Dice curves for reports/notebooks."""
+    if not history:
+        return
+    output_dir.mkdir(parents=True, exist_ok=True)
+    epochs = [int(row["epoch"]) for row in history]
+
+    plt.figure(figsize=(8, 5))
+    plt.plot(epochs, [float(row["train_loss"]) for row in history], label="Train loss")
+    plt.plot(epochs, [float(row["val_loss"]) for row in history], label="Val loss")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.title("Training and validation loss")
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(output_dir / "loss_curve.png", dpi=200)
+    plt.close()
+
+    plt.figure(figsize=(8, 5))
+    plt.plot(epochs, [float(row["train_dice"]) for row in history], label="Train Dice")
+    plt.plot(epochs, [float(row["val_dice"]) for row in history], label="Val Dice")
+    plt.xlabel("Epoch")
+    plt.ylabel("Dice")
+    plt.title("Training and validation Dice")
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(output_dir / "dice_curve.png", dpi=200)
+    plt.close()
+
+
+def save_failure_analysis_template(output_path: Path) -> None:
+    """Create a reusable qualitative failure-analysis note file."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(
+        """# Week 3 Failure Case Analysis
+
+Use the prediction panels in `results/week3/predictions/` and the per-sample CSV in
+`results/week3/logs/prediction_records.csv` to document visual patterns.
+
+## Good Predictions
+
+- Samples where building footprints align well with the ground truth:
+- Common scene properties:
+
+## Difficult Scenes
+
+- Tiny buildings:
+- Shadows:
+- Smoke or haze:
+- Flood reflections:
+- Dense urban regions:
+- Partial/unclear building boundaries:
+
+## Failure Cases
+
+- False positives:
+- False negatives:
+- Mask shifted or fragmented:
+- Empty or near-empty predictions:
+
+## Research Directions
+
+- More robust augmentation for shadows, smoke, and flood reflections.
+- Higher-resolution crops for tiny buildings.
+- Multiclass damage segmentation instead of binary building segmentation.
+- Pretrained encoder U-Net for better feature extraction.
+""",
+        encoding="utf-8",
+    )
 
 
 def build_overfit_dataloaders(
@@ -213,10 +349,17 @@ def main() -> None:
     parser.add_argument("--max-val-samples", type=int, default=None, help="Use only this many validation samples.")
     parser.add_argument("--overfit-samples", type=int, default=None, help="Debug by training/validating on N clean samples.")
     parser.add_argument("--small-model", action="store_true", help="Use a smaller U-Net for faster CPU experiments.")
-    parser.add_argument("--checkpoint-dir", type=Path, default=Path("outputs") / "checkpoints")
-    parser.add_argument("--prediction-dir", type=Path, default=Path("outputs") / "predictions")
-    parser.add_argument("--num-predictions", type=int, default=8, help="Validation predictions to save when validation improves.")
+    parser.add_argument("--results-dir", type=Path, default=Path("results") / "week3")
+    parser.add_argument("--checkpoint-dir", type=Path, default=None)
+    parser.add_argument("--prediction-dir", type=Path, default=None)
+    parser.add_argument("--num-predictions", type=int, default=18, help="Validation predictions to save when validation improves.")
     args = parser.parse_args()
+
+    args.checkpoint_dir = args.checkpoint_dir or args.results_dir / "checkpoints"
+    args.prediction_dir = args.prediction_dir or args.results_dir / "predictions"
+    logs_dir = args.results_dir / "logs"
+    figures_dir = args.results_dir / "figures"
+    dataset_statistics_dir = args.results_dir / "dataset_statistics"
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if args.overfit_samples is not None and args.overfit_samples > 0:
@@ -247,7 +390,33 @@ def main() -> None:
 
     args.checkpoint_dir.mkdir(parents=True, exist_ok=True)
     args.prediction_dir.mkdir(parents=True, exist_ok=True)
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    figures_dir.mkdir(parents=True, exist_ok=True)
+    dataset_statistics_dir.mkdir(parents=True, exist_ok=True)
+
+    config = {
+        "data_dir": str(args.data_dir),
+        "split_dir": str(args.split_dir),
+        "image_size": args.image_size,
+        "batch_size": args.batch_size,
+        "epochs": args.epochs,
+        "learning_rate": args.lr,
+        "num_workers": args.num_workers,
+        "max_train_samples": args.max_train_samples,
+        "max_val_samples": args.max_val_samples,
+        "overfit_samples": args.overfit_samples,
+        "small_model": args.small_model,
+        "features": list(features),
+        "device": str(device),
+    }
+    save_json(config, logs_dir / "run_config.json")
+    train_sample_counts, train_class_counts = collect_dataset_statistics(args.data_dir, "train")
+    save_metrics_csv(train_sample_counts, train_class_counts, dataset_statistics_dir / "week3_train_dataset_statistics.csv")
+    save_failure_analysis_template(args.results_dir / "failure_analysis.md")
+
     best_val_dice = -1.0
+    best_metrics: dict[str, float | int] = {}
+    history: list[dict[str, float | int]] = []
     print(f"device={device}")
     print(f"train_samples={len(train_loader.dataset)} val_samples={len(val_loader.dataset)}")
     if args.overfit_samples is not None and args.overfit_samples > 0:
@@ -265,8 +434,26 @@ def main() -> None:
             f"val_f1={val_metrics['f1']:.4f}"
         )
 
+        epoch_record = {
+            "epoch": epoch,
+            "train_loss": train_loss,
+            "val_loss": val_loss,
+            "train_dice": train_metrics["dice"],
+            "val_dice": val_metrics["dice"],
+            "train_iou": train_metrics["iou"],
+            "val_iou": val_metrics["iou"],
+            "val_precision": val_metrics["precision"],
+            "val_recall": val_metrics["recall"],
+            "val_f1": val_metrics["f1"],
+        }
+        history.append(epoch_record)
+        save_history_csv(history, logs_dir / "training_log.csv")
+        plot_training_curves(history, figures_dir)
+
         if val_metrics["dice"] > best_val_dice:
             best_val_dice = val_metrics["dice"]
+            best_metrics = {"epoch": epoch, **val_metrics}
+            save_json(best_metrics, logs_dir / "best_metrics.json")
             torch.save(
                 {
                     "model_state_dict": model.state_dict(),
@@ -275,13 +462,19 @@ def main() -> None:
                 },
                 args.checkpoint_dir / "week3_unet_binary_best.pt",
             )
-            save_prediction_examples(
+            records = save_prediction_examples(
                 model,
                 val_loader,
                 device,
                 args.prediction_dir / f"epoch_{epoch:03d}",
                 max_examples=args.num_predictions,
             )
+            save_prediction_records(records, logs_dir / "prediction_records.csv")
+
+    save_history_csv(history, logs_dir / "training_log.csv")
+    plot_training_curves(history, figures_dir)
+    if best_metrics:
+        save_json(best_metrics, logs_dir / "best_metrics.json")
 
 
 if __name__ == "__main__":

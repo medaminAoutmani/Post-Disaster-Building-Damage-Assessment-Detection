@@ -162,18 +162,18 @@ The main additions and updates are:
 ```text
 src/week3_dataset_statistics.py
 src/week3_model.py
-src/week3_train_baseline.py
+src/week3_train.py
 src/week2_dataset.py
 ```
 
-`week2_model.py` and `week2_train_baseline.py` remain the Week 2 baseline. `week3_model.py` and `week3_train_baseline.py` are the improved Week 3 model path.
+`week2_model.py` and `week2_train_baseline.py` remain the Week 2 baseline. `week3_model.py` and `week3_train.py` are the improved Week 3 model path.
 
 ### Model Separation
 
 | Stage | Model file | Training file | Checkpoint |
 |---|---|---|---|
 | Week 2 baseline | `src/week2_model.py` | `src/week2_train_baseline.py` | `outputs/checkpoints/week2_unet_binary_best.pt` |
-| Week 3 improved baseline | `src/week3_model.py` | `src/week3_train_baseline.py` | `outputs/checkpoints/week3_unet_binary_best.pt` |
+| Week 3 improved baseline | `src/week3_model.py` | `src/week3_train.py` | `results/week3/checkpoints/week3_unet_binary_best.pt` |
 
 The two model files currently share the same compact U-Net architecture, but they are intentionally separated. This keeps the Week 2 baseline stable while allowing Week 3 to add improved training, metrics, debugging tools, and future architecture changes without changing the original experiment.
 
@@ -258,7 +258,7 @@ The Week 3 training script saves prediction examples whenever validation Dice im
 Prediction outputs are saved in:
 
 ```text
-outputs/predictions/epoch_XXX/
+results/week3/predictions/epoch_XXX/
 ```
 
 For each sample, the script saves:
@@ -275,7 +275,7 @@ This is important because numerical metrics do not always tell the full story. V
 Week 3 also adds an overfit test mode:
 
 ```text
-python src/week3_train_baseline.py --overfit-samples 8 --epochs 50 --batch-size 2 --small-model
+python src/week3_train.py --overfit-samples 8 --epochs 50 --batch-size 2 --small-model
 ```
 
 This trains and validates on the same small set of clean samples. The model should eventually reach a very high Dice score, ideally above 0.9.
@@ -302,6 +302,8 @@ outputs/
 +-- masks/
 +-- predictions/
 +-- visualizations/
+results/
++-- week3/
 ```
 
 Each folder has a clear purpose:
@@ -313,6 +315,7 @@ Each folder has a clear purpose:
 | `outputs/masks/` | Generated or saved mask artifacts |
 | `outputs/predictions/` | Model prediction visualizations |
 | `outputs/visualizations/` | Week 1 sample visualizations |
+| `results/week3/` | Reproducibility package for Week 3 metrics, logs, curves, panels, checkpoints, dataset statistics, and failure analysis |
 
 ## How to Run the Project
 
@@ -331,13 +334,13 @@ python src\week2_train_baseline.py --epochs 5 --batch-size 4 --image-size 512
 Train the Week 3 improved baseline:
 
 ```powershell
-python src\week3_train_baseline.py --epochs 20 --batch-size 4 --image-size 512
+python src\week3_train.py --epochs 20 --batch-size 4 --image-size 512
 ```
 
 Run the overfit debugging test:
 
 ```powershell
-python src\week3_train_baseline.py --overfit-samples 8 --epochs 50 --batch-size 2 --small-model
+python src\week3_train.py --overfit-samples 8 --epochs 50 --batch-size 2 --small-model
 ```
 
 ## Current Project Status

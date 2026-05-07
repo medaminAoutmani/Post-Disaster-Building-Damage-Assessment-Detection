@@ -14,7 +14,7 @@ src/
 +-- week2_train_baseline.py
 +-- week3_dataset_statistics.py
 +-- week3_model.py
-+-- week3_train_baseline.py
++-- week3_train.py
 splits/
 +-- train.txt
 +-- val.txt
@@ -22,6 +22,8 @@ splits/
 outputs/
 +-- logs/
 +-- visualizations/
+results/
++-- week3/
 ```
 
 The raw dataset is intentionally ignored by Git with `.gitignore`.
@@ -51,11 +53,19 @@ python src\week2_train_baseline.py --epochs 5 --batch-size 4 --image-size 512
 Train Week 3 improved baseline:
 
 ```powershell
-python src\week3_train_baseline.py --epochs 20 --batch-size 4 --image-size 512
+python src\week3_train.py --epochs 20 --batch-size 4 --image-size 512
 ```
+
+By default, Week 3 saves reproducibility artifacts to:
+
+```text
+results/week3/
+```
+
+This includes best metrics, training logs, training curves, qualitative prediction panels, model checkpoints, dataset statistics, and a failure-analysis template.
 
 Run Week 3 overfit test:
 
 ```powershell
-python src\week3_train_baseline.py --overfit-samples 8 --epochs 50 --batch-size 2 --small-model
+python src\week3_train.py --overfit-samples 8 --epochs 50 --batch-size 2 --small-model
 ```
