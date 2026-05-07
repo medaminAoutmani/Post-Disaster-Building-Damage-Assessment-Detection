@@ -202,7 +202,7 @@ src/week3_dataset_statistics.py
 It saves a report-friendly CSV file to:
 
 ```text
-outputs/logs/week3_train_dataset_statistics.csv
+results/week3/metrics/dataset_statistics.csv
 ```
 
 Current training dataset statistics:
@@ -258,7 +258,7 @@ The Week 3 training script saves prediction examples whenever validation Dice im
 Prediction outputs are saved in:
 
 ```text
-results/week3/predictions/epoch_XXX/
+results/week3/predictions/
 ```
 
 For each sample, the script saves:
@@ -315,14 +315,14 @@ Each folder has a clear purpose:
 | `outputs/masks/` | Generated or saved mask artifacts |
 | `outputs/predictions/` | Model prediction visualizations |
 | `outputs/visualizations/` | Week 1 sample visualizations |
-| `results/week3/` | Reproducibility package for Week 3 metrics, logs, curves, panels, checkpoints, dataset statistics, and failure analysis |
+| `results/week3/` | Preserved Week 3 benchmark with metrics, config, curves, panels, checkpoints, dataset statistics, and failure analysis |
 
 ## How to Run the Project
 
 Create dataset statistics:
 
 ```powershell
-python src\week3_dataset_statistics.py --data-dir data --split train --output-dir outputs\logs
+python src\week3_dataset_statistics.py --data-dir data --split train --output-file results\week3\metrics\dataset_statistics.csv
 ```
 
 Train the Week 2 baseline:

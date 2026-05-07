@@ -149,22 +149,38 @@ def tensor_image_to_uint8(image_tensor: torch.Tensor) -> np.ndarray:
     return np.clip(post_image * 255.0, 0, 255).astype(np.uint8)
 
 
+def create_prediction_overlay(input_image: np.ndarray, pred_mask: np.ndarray) -> np.ndarray:
+    """Overlay predicted building pixels on the post-disaster image."""
+    overlay = input_image.copy()
+    mask_bool = pred_mask > 0
+    overlay[mask_bool] = (0.55 * overlay[mask_bool] + 0.45 * np.array([255, 0, 0])).astype(np.uint8)
+    return overlay
+
+
 def save_prediction_examples(
     model: nn.Module,
     dataloader: DataLoader,
     device: torch.device,
-    output_dir: Path,
+    predictions_dir: Path,
+    visualizations_dir: Path,
     max_examples: int = 8,
 ) -> list[dict[str, str | float]]:
     """Save input/ground-truth/prediction panels and return per-sample records."""
-    output_dir.mkdir(parents=True, exist_ok=True)
+    predictions_dir.mkdir(parents=True, exist_ok=True)
     category_dirs = {
-        "good_predictions": output_dir / "good_predictions",
-        "difficult_scenes": output_dir / "difficult_scenes",
-        "failure_cases": output_dir / "failure_cases",
+        "best_examples": predictions_dir / "best_examples",
+        "difficult_scenes": predictions_dir / "difficult_scenes",
+        "failure_cases": predictions_dir / "failure_cases",
+    }
+    visualization_dirs = {
+        "overlays": visualizations_dir / "overlays",
+        "masks": visualizations_dir / "masks",
+        "comparisons": visualizations_dir / "comparisons",
     }
     for category_dir in category_dirs.values():
         category_dir.mkdir(parents=True, exist_ok=True)
+    for visualization_dir in visualization_dirs.values():
+        visualization_dir.mkdir(parents=True, exist_ok=True)
 
     model.eval()
     saved = 0
@@ -185,7 +201,7 @@ def save_prediction_examples(
                 pred_mask = (predictions[index, 0].numpy() * 255).astype(np.uint8)
                 dice = float(sample_dice[index].item())
                 if dice >= 0.70:
-                    category = "good_predictions"
+                    category = "best_examples"
                 elif dice >= 0.30:
                     category = "difficult_scenes"
                 else:
@@ -204,6 +220,17 @@ def save_prediction_examples(
                 cv2.imwrite(str(category_dir / f"{sample_id}_input.png"), cv2.cvtColor(input_image, cv2.COLOR_RGB2BGR))
                 cv2.imwrite(str(category_dir / f"{sample_id}_gt_mask.png"), gt_mask)
                 cv2.imwrite(str(category_dir / f"{sample_id}_pred_mask.png"), pred_mask)
+                overlay = create_prediction_overlay(input_image, pred_mask)
+                cv2.imwrite(
+                    str(visualization_dirs["comparisons"] / f"{sample_id}_input_gt_pred.png"),
+                    cv2.cvtColor(panel, cv2.COLOR_RGB2BGR),
+                )
+                cv2.imwrite(str(visualization_dirs["masks"] / f"{sample_id}_gt_mask.png"), gt_mask)
+                cv2.imwrite(str(visualization_dirs["masks"] / f"{sample_id}_pred_mask.png"), pred_mask)
+                cv2.imwrite(
+                    str(visualization_dirs["overlays"] / f"{sample_id}_prediction_overlay.png"),
+                    cv2.cvtColor(overlay, cv2.COLOR_RGB2BGR),
+                )
                 records.append({"sample_id": sample_id, "dice": dice, "category": category})
 
                 saved += 1
@@ -239,8 +266,24 @@ def save_json(data: dict, output_path: Path) -> None:
     output_path.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
 
 
+def save_training_config_yaml(config: dict, output_path: Path) -> None:
+    """Save a simple YAML config without adding another dependency."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    lines = []
+    for key, value in config.items():
+        if isinstance(value, list):
+            lines.append(f"{key}: [{', '.join(str(item) for item in value)}]")
+        elif value is None:
+            lines.append(f"{key}: null")
+        elif isinstance(value, str):
+            lines.append(f"{key}: {value}")
+        else:
+            lines.append(f"{key}: {value}")
+    output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def plot_training_curves(history: list[dict[str, float | int]], output_dir: Path) -> None:
-    """Save loss and Dice curves for reports/notebooks."""
+    """Save loss, Dice, and IoU curves for reports/notebooks."""
     if not history:
         return
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -270,6 +313,18 @@ def plot_training_curves(history: list[dict[str, float | int]], output_dir: Path
     plt.savefig(output_dir / "dice_curve.png", dpi=200)
     plt.close()
 
+    plt.figure(figsize=(8, 5))
+    plt.plot(epochs, [float(row["train_iou"]) for row in history], label="Train IoU")
+    plt.plot(epochs, [float(row["val_iou"]) for row in history], label="Val IoU")
+    plt.xlabel("Epoch")
+    plt.ylabel("IoU")
+    plt.title("Training and validation IoU")
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(output_dir / "iou_curve.png", dpi=200)
+    plt.close()
+
 
 def save_failure_analysis_template(output_path: Path) -> None:
     """Create a reusable qualitative failure-analysis note file."""
@@ -278,9 +333,9 @@ def save_failure_analysis_template(output_path: Path) -> None:
         """# Week 3 Failure Case Analysis
 
 Use the prediction panels in `results/week3/predictions/` and the per-sample CSV in
-`results/week3/logs/prediction_records.csv` to document visual patterns.
+`results/week3/metrics/prediction_records.csv` to document visual patterns.
 
-## Good Predictions
+## Best Predictions
 
 - Samples where building footprints align well with the ground truth:
 - Common scene properties:
@@ -298,6 +353,7 @@ Use the prediction panels in `results/week3/predictions/` and the per-sample CSV
 
 - False positives:
 - False negatives:
+- Missed destroyed buildings:
 - Mask shifted or fragmented:
 - Empty or near-empty predictions:
 
@@ -357,9 +413,9 @@ def main() -> None:
 
     args.checkpoint_dir = args.checkpoint_dir or args.results_dir / "checkpoints"
     args.prediction_dir = args.prediction_dir or args.results_dir / "predictions"
-    logs_dir = args.results_dir / "logs"
-    figures_dir = args.results_dir / "figures"
-    dataset_statistics_dir = args.results_dir / "dataset_statistics"
+    metrics_dir = args.results_dir / "metrics"
+    config_dir = args.results_dir / "config"
+    visualizations_dir = args.results_dir / "visualizations"
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if args.overfit_samples is not None and args.overfit_samples > 0:
@@ -390,9 +446,9 @@ def main() -> None:
 
     args.checkpoint_dir.mkdir(parents=True, exist_ok=True)
     args.prediction_dir.mkdir(parents=True, exist_ok=True)
-    logs_dir.mkdir(parents=True, exist_ok=True)
-    figures_dir.mkdir(parents=True, exist_ok=True)
-    dataset_statistics_dir.mkdir(parents=True, exist_ok=True)
+    metrics_dir.mkdir(parents=True, exist_ok=True)
+    config_dir.mkdir(parents=True, exist_ok=True)
+    visualizations_dir.mkdir(parents=True, exist_ok=True)
 
     config = {
         "data_dir": str(args.data_dir),
@@ -400,18 +456,23 @@ def main() -> None:
         "image_size": args.image_size,
         "batch_size": args.batch_size,
         "epochs": args.epochs,
+        "optimizer": "AdamW",
         "learning_rate": args.lr,
+        "loss": "BCE + Dice",
+        "model": "UNet",
         "num_workers": args.num_workers,
         "max_train_samples": args.max_train_samples,
         "max_val_samples": args.max_val_samples,
         "overfit_samples": args.overfit_samples,
         "small_model": args.small_model,
         "features": list(features),
+        "target_mode": "binary",
         "device": str(device),
     }
-    save_json(config, logs_dir / "run_config.json")
+    save_json(config, config_dir / "training_config.json")
+    save_training_config_yaml(config, config_dir / "training_config.yaml")
     train_sample_counts, train_class_counts = collect_dataset_statistics(args.data_dir, "train")
-    save_metrics_csv(train_sample_counts, train_class_counts, dataset_statistics_dir / "week3_train_dataset_statistics.csv")
+    save_metrics_csv(train_sample_counts, train_class_counts, metrics_dir / "dataset_statistics.csv")
     save_failure_analysis_template(args.results_dir / "failure_analysis.md")
 
     best_val_dice = -1.0
@@ -447,13 +508,24 @@ def main() -> None:
             "val_f1": val_metrics["f1"],
         }
         history.append(epoch_record)
-        save_history_csv(history, logs_dir / "training_log.csv")
-        plot_training_curves(history, figures_dir)
+        save_history_csv(history, metrics_dir / "training_log.csv")
+        plot_training_curves(history, visualizations_dir)
 
         if val_metrics["dice"] > best_val_dice:
             best_val_dice = val_metrics["dice"]
-            best_metrics = {"epoch": epoch, **val_metrics}
-            save_json(best_metrics, logs_dir / "best_metrics.json")
+            best_metrics = {
+                "best_epoch": epoch,
+                "train_dice": train_metrics["dice"],
+                "train_iou": train_metrics["iou"],
+                "train_loss": train_loss,
+                "val_loss": val_loss,
+                "val_dice": val_metrics["dice"],
+                "val_iou": val_metrics["iou"],
+                "val_precision": val_metrics["precision"],
+                "val_recall": val_metrics["recall"],
+                "val_f1": val_metrics["f1"],
+            }
+            save_json(best_metrics, metrics_dir / "final_metrics.json")
             torch.save(
                 {
                     "model_state_dict": model.state_dict(),
@@ -466,15 +538,16 @@ def main() -> None:
                 model,
                 val_loader,
                 device,
-                args.prediction_dir / f"epoch_{epoch:03d}",
+                args.prediction_dir,
+                visualizations_dir,
                 max_examples=args.num_predictions,
             )
-            save_prediction_records(records, logs_dir / "prediction_records.csv")
+            save_prediction_records(records, metrics_dir / "prediction_records.csv")
 
-    save_history_csv(history, logs_dir / "training_log.csv")
-    plot_training_curves(history, figures_dir)
+    save_history_csv(history, metrics_dir / "training_log.csv")
+    plot_training_curves(history, visualizations_dir)
     if best_metrics:
-        save_json(best_metrics, logs_dir / "best_metrics.json")
+        save_json(best_metrics, metrics_dir / "final_metrics.json")
 
 
 if __name__ == "__main__":

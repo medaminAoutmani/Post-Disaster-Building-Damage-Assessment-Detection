@@ -103,10 +103,11 @@ def main() -> None:
     parser.add_argument("--data-dir", type=Path, default=Path("data"))
     parser.add_argument("--split", type=str, default="train")
     parser.add_argument("--output-dir", type=Path, default=Path("outputs") / "logs")
+    parser.add_argument("--output-file", type=Path, default=None)
     args = parser.parse_args()
 
     sample_counts, class_counts = collect_dataset_statistics(args.data_dir, args.split)
-    output_path = args.output_dir / f"week3_{args.split}_dataset_statistics.csv"
+    output_path = args.output_file or args.output_dir / f"week3_{args.split}_dataset_statistics.csv"
     save_metrics_csv(sample_counts, class_counts, output_path)
 
     print("Metric\tValue")

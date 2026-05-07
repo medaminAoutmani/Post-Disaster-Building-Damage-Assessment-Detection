@@ -1,0 +1,49 @@
+﻿Project tree (data/, outputs/, .git/, caches, and local IDE files omitted)
+.
++---notebooks
+|   +---week2_training_prep.ipynb
+|   \---xbd_exploration.ipynb
++---results
+|   \---week3
+|       +---checkpoints
+|       |   \---.gitkeep
+|       +---config
+|       |   \---training_config.yaml
+|       +---metrics
+|       |   +---dataset_statistics.csv
+|       |   \---final_metrics.json
+|       +---notebooks
+|       |   \---week3_analysis.ipynb
+|       +---predictions
+|       |   +---best_examples
+|       |   |   \---.gitkeep
+|       |   +---difficult_scenes
+|       |   |   \---.gitkeep
+|       |   \---failure_cases
+|       |       \---.gitkeep
+|       +---visualizations
+|       |   +---comparisons
+|       |   |   \---.gitkeep
+|       |   +---masks
+|       |   |   \---.gitkeep
+|       |   \---overlays
+|       |       \---.gitkeep
+|       +---failure_analysis.md
+|       \---README.md
++---splits
+|   +---test.txt
+|   +---train.txt
+|   \---val.txt
++---src
+|   +---week1_preprocessing.py
+|   +---week2_dataset.py
+|   +---week2_model.py
+|   +---week2_train_baseline.py
+|   +---week3_dataset_statistics.py
+|   +---week3_model.py
+|   \---week3_train.py
++---.gitignore
++---PROJECT_REPORT.md
++---project-tree.txt
++---README.md
+\---requirements.txt

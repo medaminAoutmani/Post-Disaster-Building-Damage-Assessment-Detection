@@ -41,7 +41,7 @@ See `PROJECT_REPORT.md` for the full project report.
 Create dataset statistics:
 
 ```powershell
-python src\week3_dataset_statistics.py --data-dir data --split train --output-dir outputs\logs
+python src\week3_dataset_statistics.py --data-dir data --split train --output-file results\week3\metrics\dataset_statistics.csv
 ```
 
 Train Week 2 baseline:
@@ -62,7 +62,7 @@ By default, Week 3 saves reproducibility artifacts to:
 results/week3/
 ```
 
-This includes best metrics, training logs, training curves, qualitative prediction panels, model checkpoints, dataset statistics, and a failure-analysis template.
+This includes final metrics, training logs, training curves, qualitative prediction panels, model checkpoints, dataset statistics, config files, and a failure-analysis template.
 
 Run Week 3 overfit test:
 

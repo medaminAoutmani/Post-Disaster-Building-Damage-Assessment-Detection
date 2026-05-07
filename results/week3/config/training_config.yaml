@@ -1,0 +1,9 @@
+image_size: 512
+batch_size: 4
+epochs: 20
+optimizer: AdamW
+learning_rate: 0.001
+loss: BCE + Dice
+model: UNet
+features: [32, 64, 128, 256]
+target_mode: binary
