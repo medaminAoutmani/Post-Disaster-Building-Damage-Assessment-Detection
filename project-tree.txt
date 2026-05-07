@@ -9,32 +9,39 @@ Project tree (data/, .git/, caches, and local IDE files omitted)
 |   +---week2
 |   |   +---checkpoints
 |   |   \---predictions
-|   \---week3
+|   +---week3
+|   |   +---checkpoints
+|   |   |   \---.gitkeep
+|   |   +---config
+|   |   |   \---training_config.yaml
+|   |   +---metrics
+|   |   |   +---dataset_statistics.csv
+|   |   |   +---final_metrics.json
+|   |   |   \---week3_train_dataset_statistics.csv
+|   |   +---notebooks
+|   |   |   \---week3_analysis.ipynb
+|   |   +---predictions
+|   |   |   +---best_examples
+|   |   |   |   \---.gitkeep
+|   |   |   +---difficult_scenes
+|   |   |   |   \---.gitkeep
+|   |   |   \---failure_cases
+|   |   |       \---.gitkeep
+|   |   +---visualizations
+|   |   |   +---comparisons
+|   |   |   |   \---.gitkeep
+|   |   |   +---masks
+|   |   |   |   \---.gitkeep
+|   |   |   \---overlays
+|   |   |       \---.gitkeep
+|   |   +---failure_analysis.md
+|   |   \---README.md
+|   \---week4
 |       +---checkpoints
-|       |   \---.gitkeep
 |       +---config
-|       |   \---training_config.yaml
 |       +---metrics
-|       |   +---dataset_statistics.csv
-|       |   +---final_metrics.json
-|       |   \---week3_train_dataset_statistics.csv
-|       +---notebooks
-|       |   \---week3_analysis.ipynb
 |       +---predictions
-|       |   +---best_examples
-|       |   |   \---.gitkeep
-|       |   +---difficult_scenes
-|       |   |   \---.gitkeep
-|       |   \---failure_cases
-|       |       \---.gitkeep
 |       +---visualizations
-|       |   +---comparisons
-|       |   |   \---.gitkeep
-|       |   +---masks
-|       |   |   \---.gitkeep
-|       |   \---overlays
-|       |       \---.gitkeep
-|       +---failure_analysis.md
 |       \---README.md
 +---splits
 |   +---test.txt
@@ -47,7 +54,9 @@ Project tree (data/, .git/, caches, and local IDE files omitted)
 |   +---week2_train_baseline.py
 |   +---week3_dataset_statistics.py
 |   +---week3_model.py
-|   \---week3_train.py
+|   +---week3_train.py
+|   +---week4_model.py
+|   \---week4_train.py
 +---.gitignore
 +---PROJECT_REPORT.md
 +---project-tree.txt
