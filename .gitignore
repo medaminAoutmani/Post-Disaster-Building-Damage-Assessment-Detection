@@ -5,7 +5,17 @@ data/
 *.7z
 *.rar
 
+results/
 
+# Training outputs and generated artifacts
+results/**/checkpoints/
+results/**/predictions/
+results/**/masks/
+results/**/visualizations/
+results/**/confusion_matrices/*.png
+*.pt
+*.pth
+*.ckpt
 
 # Keep lightweight report/log CSV files if you choose to commit them.
 # Uncomment the next line if you want to ignore every generated output.

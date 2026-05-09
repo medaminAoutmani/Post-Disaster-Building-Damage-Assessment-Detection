@@ -17,6 +17,8 @@ src/
 +-- week3_train.py
 +-- week4_model.py
 +-- week4_train.py
++-- week5_model.py
++-- week5_train.py
 splits/
 +-- train.txt
 +-- val.txt
@@ -26,6 +28,7 @@ results/
 +-- week2/
 +-- week3/
 +-- week4/
++-- week5/
 ```
 
 The raw dataset is intentionally ignored by Git with `.gitignore`.
@@ -36,6 +39,7 @@ The raw dataset is intentionally ignored by Git with `.gitignore`.
 - Week 2: first U-Net baseline training pipeline
 - Week 3: improved baseline with dataset cleaning, BCE + Dice loss, more metrics, prediction visualization, and overfit testing
 - Week 4: U-Net with a pretrained ResNet34 encoder for stronger feature extraction
+- Week 5: multiclass damage segmentation for background, no damage, minor damage, major damage, and destroyed
 
 See `PROJECT_REPORT.md` for the full project report.
 
@@ -65,13 +69,19 @@ Train Week 4 ResNet34 encoder U-Net:
 python src\week4_train.py --epochs 20 --batch-size 4 --image-size 512
 ```
 
+Train Week 5 multiclass damage segmentation:
+
+```powershell
+python src\week5_train.py --epochs 20 --batch-size 4 --image-size 512
+```
+
 By default, experiment artifacts are saved under:
 
 ```text
 results/
 ```
 
-This keeps Week 1 visualizations, Week 2 baseline checkpoints, Week 3 improved baseline outputs, and Week 4 pretrained-encoder outputs together in one results tree.
+This keeps Week 1 visualizations, Week 2 baseline checkpoints, Week 3 improved baseline outputs, Week 4 pretrained-encoder outputs, and Week 5 multiclass damage outputs together in one results tree.
 
 Run Week 3 overfit test:
 

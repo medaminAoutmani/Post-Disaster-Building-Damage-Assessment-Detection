@@ -1,0 +1,21 @@
+{
+  "batch_size": 4,
+  "data_dir": "data",
+  "device": "cuda",
+  "encoder": "ResNet34",
+  "epochs": 20,
+  "freeze_encoder": false,
+  "image_size": 512,
+  "learning_rate": 0.0003,
+  "loss": "BCE + Dice",
+  "max_train_samples": null,
+  "max_val_samples": null,
+  "model": "ResNet34UNet",
+  "normalization": "ImageNet mean/std duplicated for pre and post RGB",
+  "num_workers": 0,
+  "optimizer": "AdamW",
+  "overfit_samples": null,
+  "pretrained": true,
+  "split_dir": "splits",
+  "target_mode": "binary"
+}

@@ -36,9 +36,17 @@ Project tree (data/, .git/, caches, and local IDE files omitted)
 |   |   |       \---.gitkeep
 |   |   +---failure_analysis.md
 |   |   \---README.md
-|   \---week4
+|   +---week4
+|   |   +---checkpoints
+|   |   +---config
+|   |   +---metrics
+|   |   +---predictions
+|   |   +---visualizations
+|   |   \---README.md
+|   \---week5
 |       +---checkpoints
 |       +---config
+|       +---confusion_matrices
 |       +---metrics
 |       +---predictions
 |       +---visualizations
@@ -56,7 +64,9 @@ Project tree (data/, .git/, caches, and local IDE files omitted)
 |   +---week3_model.py
 |   +---week3_train.py
 |   +---week4_model.py
-|   \---week4_train.py
+|   +---week4_train.py
+|   +---week5_model.py
+|   \---week5_train.py
 +---.gitignore
 +---PROJECT_REPORT.md
 +---project-tree.txt

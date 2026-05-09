@@ -19,6 +19,7 @@ The current pipeline is divided into three completed stages, with a fourth stage
 2. Week 2: Dataset pipeline, train/validation/test splits, and the first baseline U-Net
 3. Week 3: A separate improved baseline with cleaner data, stronger training, prediction visualization, overfit testing, and better metrics
 4. Week 4: U-Net upgrade with a pretrained ResNet34 encoder
+5. Week 5: Multiclass disaster damage segmentation
 
 ## Week 1: Preprocessing and Data Understanding
 
@@ -309,9 +310,16 @@ results/
 |   +-- metrics/
 |   +-- predictions/
 |   \-- visualizations/
-\-- week4/
++-- week4/
+|   +-- checkpoints/
+|   +-- config/
+|   +-- metrics/
+|   +-- predictions/
+|   \-- visualizations/
+\-- week5/
     +-- checkpoints/
     +-- config/
+    +-- confusion_matrices/
     +-- metrics/
     +-- predictions/
     \-- visualizations/
@@ -326,6 +334,7 @@ Each folder has a clear purpose:
 | `results/week2/predictions/` | Week 2 qualitative prediction outputs, when generated |
 | `results/week3/` | Week 3 metrics, config, checkpoints, prediction panels, visualizations, and failure analysis |
 | `results/week4/` | Week 4 pretrained-encoder metrics, config, checkpoints, prediction panels, visualizations, and failure analysis |
+| `results/week5/` | Week 5 multiclass metrics, confusion matrices, color-mask predictions, checkpoints, and failure analysis |
 
 ## How to Run the Project
 
@@ -353,6 +362,12 @@ Train the Week 4 ResNet34 encoder U-Net:
 python src\week4_train.py --epochs 20 --batch-size 4 --image-size 512
 ```
 
+Train the Week 5 multiclass damage model:
+
+```powershell
+python src\week5_train.py --epochs 20 --batch-size 4 --image-size 512
+```
+
 Run the overfit debugging test:
 
 ```powershell
@@ -375,6 +390,7 @@ The project now has a complete baseline segmentation system:
 - Week 3 prediction examples are saved for visual inspection.
 - Dataset statistics are available for the report.
 - A Week 4 ResNet34 encoder U-Net is available as the next model upgrade.
+- A Week 5 multiclass damage segmentation model is available for severity prediction.
 - An overfit test is available for debugging the full pipeline.
 
 ## Week 4 Model
@@ -422,14 +438,137 @@ The implementation preserves the current Week 3 results as the comparison baseli
 results/week4/
 ```
 
+## Week 5 Model
+
+Week 5 moves from binary building segmentation to multiclass disaster damage segmentation. The task changes from:
+
+```text
+Where are buildings?
+```
+
+to:
+
+```text
+How damaged are the buildings?
+```
+
+This is the core scientific objective of the xBD dataset.
+
+### Week 5 Classes
+
+The model predicts five classes:
+
+| Class ID | Meaning |
+|---:|---|
+| 0 | Background |
+| 1 | No damage |
+| 2 | Minor damage |
+| 3 | Major damage |
+| 4 | Destroyed |
+
+The output tensor changes from the Week 4 binary shape:
+
+```text
+[1, H, W]
+```
+
+to the Week 5 multiclass shape:
+
+```text
+[5, H, W]
+```
+
+### Architecture
+
+Week 5 keeps the ResNet34 encoder U-Net architecture from Week 4 but changes the segmentation head to output five channels. The training dataset runs with:
+
+```text
+target_mode="multiclass"
+```
+
+so targets are class-id masks with shape:
+
+```text
+[H, W]
+```
+
+and dtype:
+
+```text
+torch.long
+```
+
+### Loss Function
+
+Binary BCE is no longer correct for this task. Week 5 uses:
+
+```text
+CrossEntropyLoss + multiclass Dice loss
+```
+
+CrossEntropy handles class prediction, while Dice improves overlap quality for each class.
+
+### Class Imbalance
+
+The xBD damage labels are highly imbalanced. No-damage buildings are much more common than damaged buildings:
+
+| Class | Building Count |
+|---|---:|
+| No damage | 117426 |
+| Minor damage | 14980 |
+| Major damage | 14161 |
+| Destroyed | 13227 |
+
+Week 5 therefore supports weighted CrossEntropy. The default class weights are:
+
+```text
+[1.0, 0.2, 1.5, 1.7, 1.8]
+```
+
+This reduces the tendency to predict mostly no-damage.
+
+### Metrics and Visualization
+
+Week 5 tracks multiclass metrics:
+
+- Per-class Dice
+- Mean foreground Dice
+- Per-class IoU
+- Mean IoU
+- Pixel accuracy
+- Macro F1
+- Confusion matrix
+
+The most important scientific metrics are `major_damage` Dice and `destroyed` Dice because these classes are most relevant for disaster response.
+
+Qualitative outputs now use color masks:
+
+| Class | Color |
+|---|---|
+| Background | Black |
+| No damage | Green |
+| Minor damage | Yellow |
+| Major damage | Orange |
+| Destroyed | Red |
+
+Each saved sample includes the input image, ground-truth color mask, predicted color mask, and prediction overlay.
+
+Confusion matrices are saved under:
+
+```text
+results/week5/confusion_matrices/
+```
+
+These are useful for studying common errors such as minor-to-major confusion or major-to-destroyed confusion.
+
 ## Future Extensions
 
-After the Week 4 encoder upgrade, a larger research step would be to move from binary building segmentation toward multiclass damage segmentation. Instead of predicting only building versus background, the model could predict:
+After the Week 5 multiclass baseline, the next improvements should focus on making damage severity prediction more reliable:
 
-- background
-- no-damage
-- minor-damage
-- major-damage
-- destroyed
-
-Other useful future improvements include testing larger U-Net variants, tracking experiments in a CSV log, adding confusion-matrix analysis, and comparing performance across disaster types.
+- Compare baseline multiclass training against class-weighted training.
+- Compare frozen and unfrozen pretrained encoders.
+- Tune separate encoder and decoder learning rates.
+- Test larger or stronger encoders such as ResNet50 or EfficientNet.
+- Add disaster-type performance breakdowns.
+- Add confusion-matrix discussion for minor/major/destroyed mistakes.
+- Investigate crop-based high-resolution training for tiny buildings.

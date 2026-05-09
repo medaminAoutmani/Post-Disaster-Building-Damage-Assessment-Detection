@@ -1,0 +1,19 @@
+data_dir: data
+split_dir: splits
+image_size: 512
+batch_size: 4
+epochs: 20
+optimizer: AdamW
+learning_rate: 0.0003
+loss: BCE + Dice
+model: ResNet34UNet
+encoder: ResNet34
+pretrained: True
+freeze_encoder: False
+normalization: ImageNet mean/std duplicated for pre and post RGB
+num_workers: 0
+max_train_samples: null
+max_val_samples: null
+overfit_samples: null
+target_mode: binary
+device: cuda

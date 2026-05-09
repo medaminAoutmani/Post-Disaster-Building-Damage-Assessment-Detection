@@ -1,0 +1,14 @@
+Metric,Value
+total samples,2799
+valid samples,2241
+skipped samples,558
+empty masks,0
+missing files,0
+invalid label json,0
+invalid polygons,0
+no valid damage class,558
+ignored unclassified/unknown buildings,2993
+buildings no-damage,117426
+buildings minor-damage,14980
+buildings major-damage,14161
+buildings destroyed,13227
