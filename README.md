@@ -106,13 +106,51 @@ python src\week6\week6_experiment_runner.py --scaffold-only
 Run Week 6 experiments:
 
 ```powershell
-python src\week6\week6_train_attention_unet.py --epochs 20 --batch-size 4 --image-size 512
-python src\week6\week6_train_unetplusplus.py --epochs 20 --batch-size 4 --image-size 512
-python src\week6\week6_train_deeplabv3plus.py --epochs 20 --batch-size 4 --image-size 512
-python src\week6\week6_train_resnet50_unet.py --epochs 20 --batch-size 4 --image-size 512
+.\run_week6_experiments.ps1
 ```
 
 `week6_train_deeplabv3plus.py` runs a torchvision DeepLabV3 model; the filename is kept for continuity, but the saved metadata uses the correct DeepLabV3 architecture name.
+
+The default Week 6 script is now Morocco-focused. It trains only on sample IDs containing earthquake, flood/flooding, wildfire, or fire, and runs this faster order:
+
+```text
+baseline -> focal_loss -> weighted_sampler -> attention_unet -> resnet50
+```
+
+Run the full research suite only when you have time:
+
+```powershell
+.\run_week6_experiments.ps1 -FullSuite
+```
+
+Run one Morocco-adaptation experiment manually:
+
+```powershell
+python src\week6\week6_experiment_runner.py --experiment attention_unet --morocco-adaptation --epochs 12
+```
+
+Recommended research order:
+
+```text
+1. Baseline reproduction
+2. Ablation study: focal loss, weighted sampler, attention U-Net, ResNet50
+3. Cheap Optuna HPO on the strongest candidate
+4. Final comparison table and final model training
+```
+
+Run cheap Optuna HPO for Morocco adaptation:
+
+```powershell
+.\run_week6_experiments.ps1 -HPO -Trials 12
+```
+
+Or run it directly:
+
+```powershell
+python src\week6\week6_experiment_runner.py --experiment attention_unet --morocco-adaptation --optuna-study --optuna-trials 12 --optuna-epochs 6 --optuna-max-train-samples 2000 --optuna-max-val-samples 500
+```
+
+Optuna writes trial folders under `results/week6/experiment_attention_unet_optuna_trial_*` and study summaries under `results/week6/hyperparameter_optimization/morocco_week6_hpo/`.
 
 Run a multi-seed Week 6 experiment:
 

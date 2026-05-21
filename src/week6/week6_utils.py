@@ -60,6 +60,7 @@ class ExperimentConfig:
     early_stopping_min_delta: float = 1e-4
     advanced_augmentations: bool = True
     visualize_every: int = 1
+    disaster_keywords: list[str] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

@@ -6,3 +6,4 @@ albumentations
 torch
 torchvision
 tensorboard
+optuna

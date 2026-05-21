@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import random
 import sys
 import time
@@ -62,6 +63,11 @@ try:
 except Exception:
     SummaryWriter = None  # type: ignore[assignment]
 
+try:
+    import optuna
+except Exception:
+    optuna = None  # type: ignore[assignment]
+
 
 EXPERIMENTS = {
     "baseline": {"model": "resnet34_unet", "loss": "cross_entropy_dice", "sampler": "shuffle"},
@@ -74,6 +80,8 @@ EXPERIMENTS = {
     "deeplabv3": {"model": "deeplabv3", "loss": "cross_entropy_dice", "sampler": "weighted"},
     "resnet50": {"model": "resnet50_unet", "loss": "tversky", "sampler": "weighted"},
 }
+
+MOROCCO_ADAPTATION_KEYWORDS = ["earthquake", "flood", "flooding", "wildfire", "fire"]
 
 
 def build_model(name: str, pretrained: bool = True, freeze_encoder: bool = False) -> nn.Module:
@@ -93,9 +101,21 @@ def build_model(name: str, pretrained: bool = True, freeze_encoder: bool = False
     raise ValueError(f"Unknown model: {name}")
 
 
+def filter_sample_ids_by_disaster(sample_ids: list[str], keywords: list[str] | None) -> list[str]:
+    if not keywords:
+        return sample_ids
+    lowered_keywords = [keyword.lower() for keyword in keywords]
+    return [sample_id for sample_id in sample_ids if any(keyword in sample_id.lower() for keyword in lowered_keywords)]
+
+
 def build_dataloaders(args: argparse.Namespace, sampler_name: str) -> tuple[DataLoader, DataLoader]:
     train_ids = read_split_file(args.split_dir / "train.txt")
     val_ids = read_split_file(args.split_dir / "val.txt")
+    disaster_keywords = MOROCCO_ADAPTATION_KEYWORDS if args.morocco_adaptation else args.disaster_keywords
+    train_ids = filter_sample_ids_by_disaster(train_ids, disaster_keywords)
+    val_ids = filter_sample_ids_by_disaster(val_ids, disaster_keywords)
+    if not train_ids or not val_ids:
+        raise ValueError(f"No train/val samples remain after disaster filtering: {disaster_keywords}")
     train_dataset = XBDChangeDataset(
         args.data_dir,
         train_ids,
@@ -281,9 +301,110 @@ def save_multi_seed_summary(results_root: Path, experiment_prefix: str, seeds: l
     save_json(summary, results_root / "comparative_analysis" / f"{experiment_prefix}_multi_seed_summary.json")
 
 
+def clone_args(args: argparse.Namespace) -> argparse.Namespace:
+    return argparse.Namespace(**vars(args))
+
+
+def save_optuna_trials_csv(study, output_path: Path) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    rows = []
+    for trial in study.trials:
+        row = {
+            "number": trial.number,
+            "state": str(trial.state),
+            "value": trial.value,
+            **trial.params,
+            **trial.user_attrs,
+        }
+        rows.append(row)
+    if not rows:
+        return
+    fieldnames = sorted({key for row in rows for key in row.keys()})
+    with output_path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def run_optuna_hpo(args: argparse.Namespace) -> None:
+    if optuna is None:
+        raise ImportError("Optuna is not installed. Install requirements.txt or run: pip install optuna")
+
+    hpo_dir = args.results_root / "hyperparameter_optimization" / args.optuna_study_name
+    hpo_dir.mkdir(parents=True, exist_ok=True)
+    storage = args.optuna_storage or f"sqlite:///{(hpo_dir / 'study.db').as_posix()}"
+    study = optuna.create_study(
+        study_name=args.optuna_study_name,
+        direction="maximize",
+        storage=storage,
+        load_if_exists=True,
+    )
+
+    def objective(trial) -> float:
+        trial_args = clone_args(args)
+        trial_args.optuna_study = False
+        trial_args.seeds = None
+        trial_args.k_folds = 0
+        trial_args.epochs = args.optuna_epochs
+        trial_args.max_train_samples = args.optuna_max_train_samples
+        trial_args.max_val_samples = args.optuna_max_val_samples
+        trial_args.no_tensorboard = True
+        trial_args.num_visual_examples = 0
+        trial_args.visualize_every = args.optuna_epochs + 1
+        trial_args.early_stopping_patience = min(args.early_stopping_patience, 3)
+        trial_args.encoder_lr = trial.suggest_float("encoder_lr", 1e-5, 3e-4, log=True)
+        trial_args.decoder_lr = trial.suggest_float("decoder_lr", 3e-5, 1e-3, log=True)
+        trial_args.loss = trial.suggest_categorical("loss", ["cross_entropy_dice", "focal", "tversky", "focal_tversky"])
+        trial_args.sampler = trial.suggest_categorical("sampler", ["shuffle", "weighted"])
+        trial_args.scheduler = trial.suggest_categorical("scheduler", ["reduce_on_plateau", "cosine", "warmup_cosine"])
+        trial_args.batch_size = trial.suggest_categorical("batch_size", args.optuna_batch_sizes)
+
+        minor_weight = trial.suggest_float("minor_class_weight", 1.0, 2.5)
+        major_weight = trial.suggest_float("major_class_weight", 1.2, 3.0)
+        destroyed_weight = trial.suggest_float("destroyed_class_weight", 1.2, 3.2)
+        trial_args.class_weights = [1.0, 0.2, minor_weight, major_weight, destroyed_weight]
+        trial_args.experiment_name = f"experiment_{args.experiment}_optuna_trial_{trial.number:03d}"
+
+        experiment_dir = train_experiment(trial_args)
+        metrics = load_final_metrics(experiment_dir)
+        mean_dice = float(metrics.get("val_mean_dice", 0.0))
+        rare_recall = float(metrics.get("val_rare_class_recall", 0.0))
+        objective_value = mean_dice + args.optuna_rare_recall_weight * rare_recall
+
+        trial.set_user_attr("experiment_dir", str(experiment_dir))
+        trial.set_user_attr("val_mean_dice", mean_dice)
+        trial.set_user_attr("val_rare_class_recall", rare_recall)
+        trial.set_user_attr("val_macro_f1", float(metrics.get("val_macro_f1", 0.0)))
+        trial.set_user_attr("objective", objective_value)
+        save_optuna_trials_csv(study, hpo_dir / "optuna_trials.csv")
+        return objective_value
+
+    study.optimize(objective, n_trials=args.optuna_trials, gc_after_trial=True)
+    save_optuna_trials_csv(study, hpo_dir / "optuna_trials.csv")
+    best_summary = {
+        "study_name": args.optuna_study_name,
+        "best_trial": study.best_trial.number,
+        "best_value": study.best_value,
+        "best_params": study.best_params,
+        "best_user_attrs": study.best_trial.user_attrs,
+        "hpo_epochs": args.optuna_epochs,
+        "hpo_max_train_samples": args.optuna_max_train_samples,
+        "hpo_max_val_samples": args.optuna_max_val_samples,
+        "objective": f"val_mean_dice + {args.optuna_rare_recall_weight} * val_rare_class_recall",
+    }
+    (hpo_dir / "best_trial.json").write_text(json.dumps(best_summary, indent=2), encoding="utf-8")
+    summarize_experiments(args.results_root, args.results_root / "comparative_analysis" / "architecture_comparison.csv")
+    print(f"Optuna study complete. Best trial: {study.best_trial.number} value={study.best_value:.4f}")
+    print(f"Best params saved to {hpo_dir / 'best_trial.json'}")
+
+
 def make_kfold_split_dirs(args: argparse.Namespace) -> list[Path]:
     """Create fold-specific split folders from the current train+val IDs."""
     all_ids = read_split_file(args.split_dir / "train.txt") + read_split_file(args.split_dir / "val.txt")
+    disaster_keywords = MOROCCO_ADAPTATION_KEYWORDS if args.morocco_adaptation else args.disaster_keywords
+    all_ids = filter_sample_ids_by_disaster(all_ids, disaster_keywords)
+    if not all_ids:
+        raise ValueError(f"No samples remain after disaster filtering: {disaster_keywords}")
     test_ids = read_split_file(args.split_dir / "test.txt") if (args.split_dir / "test.txt").exists() else []
     rng = random.Random(args.seed)
     rng.shuffle(all_ids)
@@ -337,6 +458,7 @@ def train_experiment(args: argparse.Namespace) -> Path:
         early_stopping_min_delta=args.early_stopping_min_delta,
         advanced_augmentations=not args.no_advanced_augmentations,
         visualize_every=args.visualize_every,
+        disaster_keywords=MOROCCO_ADAPTATION_KEYWORDS if args.morocco_adaptation else args.disaster_keywords,
     )
     save_experiment_config(config, experiment_dir / "config")
 
@@ -350,7 +472,9 @@ def train_experiment(args: argparse.Namespace) -> Path:
     writer = SummaryWriter(str(experiment_dir / "logs" / "tensorboard")) if SummaryWriter is not None and not args.no_tensorboard else None
     save_json(collect_environment_metadata(model), experiment_dir / "config" / "environment_metadata.json")
 
+    disaster_keywords = MOROCCO_ADAPTATION_KEYWORDS if args.morocco_adaptation else args.disaster_keywords
     logger.info("device=%s experiment=%s model=%s loss=%s sampler=%s", device, experiment_name, model_name, loss_name, sampler_name)
+    logger.info("disaster_keywords=%s", disaster_keywords)
     logger.info("amp=%s tensorboard=%s early_stopping_patience=%s", use_amp, writer is not None, args.early_stopping_patience)
     logger.info("train_samples=%s val_samples=%s", len(train_loader.dataset), len(val_loader.dataset))
 
@@ -488,6 +612,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--visualize-every", type=int, default=1)
     parser.add_argument("--num-visual-examples", type=int, default=6)
     parser.add_argument("--no-advanced-augmentations", action="store_true")
+    parser.add_argument("--disaster-keywords", nargs="*", default=None, help="Only use sample IDs containing these keywords.")
+    parser.add_argument(
+        "--morocco-adaptation",
+        action="store_true",
+        help="Shortcut for earthquake/flooding/wildfire/fire samples relevant to Morocco adaptation.",
+    )
+    parser.add_argument("--optuna-study", action="store_true", help="Run a cheap Optuna HPO study instead of one normal experiment.")
+    parser.add_argument("--optuna-study-name", default="morocco_week6_hpo")
+    parser.add_argument("--optuna-storage", default=None, help="Optuna storage URL. Defaults to a local SQLite DB in results/week6.")
+    parser.add_argument("--optuna-trials", type=int, default=12)
+    parser.add_argument("--optuna-epochs", type=int, default=6)
+    parser.add_argument("--optuna-max-train-samples", type=int, default=2000)
+    parser.add_argument("--optuna-max-val-samples", type=int, default=500)
+    parser.add_argument("--optuna-batch-sizes", type=int, nargs="*", default=[2, 4])
+    parser.add_argument("--optuna-rare-recall-weight", type=float, default=0.15)
     return parser.parse_args()
 
 
@@ -501,6 +640,9 @@ def main() -> None:
         output = args.results_root / "comparative_analysis" / "architecture_comparison.csv"
         summarize_experiments(args.results_root, output)
         print(f"Updated {output}")
+        return
+    if args.optuna_study:
+        run_optuna_hpo(args)
         return
     if args.k_folds and args.k_folds > 1:
         original_split_dir = args.split_dir
