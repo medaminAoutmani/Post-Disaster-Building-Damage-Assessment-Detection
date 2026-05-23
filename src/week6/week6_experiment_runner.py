@@ -19,7 +19,7 @@ if str(SRC_DIR) not in sys.path:
 
 import torch
 from torch import nn
-from torch.cuda.amp import GradScaler, autocast
+from torch.amp import GradScaler, autocast
 from torch.utils.data import DataLoader
 
 from week2_dataset import XBDChangeDataset, read_split_file
@@ -185,7 +185,7 @@ def run_epoch(
             masks = batch["mask"].to(device).long()
             if is_train:
                 optimizer.zero_grad(set_to_none=True)
-            with autocast(enabled=use_amp):
+            with autocast("cuda", enabled=use_amp):
                 logits = model(images)
                 loss = criterion(logits, masks)
             if is_train:
@@ -468,7 +468,7 @@ def train_experiment(args: argparse.Namespace) -> Path:
     criterion = build_loss(loss_name, args.class_weights).to(device)
     scheduler = build_scheduler(args.scheduler, optimizer, args.epochs)
     use_amp = args.amp and device.type == "cuda"
-    scaler = GradScaler(enabled=use_amp)
+    scaler = GradScaler("cuda", enabled=use_amp)
     writer = SummaryWriter(str(experiment_dir / "logs" / "tensorboard")) if SummaryWriter is not None and not args.no_tensorboard else None
     save_json(collect_environment_metadata(model), experiment_dir / "config" / "environment_metadata.json")
 

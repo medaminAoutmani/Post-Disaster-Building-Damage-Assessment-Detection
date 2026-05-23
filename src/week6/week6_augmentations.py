@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import random
 
 import albumentations as A
@@ -61,6 +62,19 @@ def _optional_transform(factory):
         return None
 
 
+def build_coarse_dropout(p: float = 0.2):
+    """Support Albumentations 1.x and 2.x CoarseDropout argument names."""
+    parameters = inspect.signature(A.CoarseDropout).parameters
+    if "num_holes_range" in parameters:
+        return A.CoarseDropout(
+            num_holes_range=(1, 8),
+            hole_height_range=(8, 48),
+            hole_width_range=(8, 48),
+            p=p,
+        )
+    return A.CoarseDropout(max_holes=8, max_height=48, max_width=48, p=p)
+
+
 def get_week6_transforms(image_size: int = 512, train: bool = True, advanced: bool = True) -> A.Compose:
     """Build stronger Week 6 transforms while preserving 6-channel pre/post inputs."""
     transforms: list[A.BasicTransform] = [A.Resize(image_size, image_size)]
@@ -70,7 +84,7 @@ def get_week6_transforms(image_size: int = 512, train: bool = True, advanced: bo
                 A.HorizontalFlip(p=0.5),
                 A.VerticalFlip(p=0.5),
                 A.RandomRotate90(p=0.5),
-                A.ShiftScaleRotate(shift_limit=0.06, scale_limit=0.18, rotate_limit=25, p=0.5),
+                A.Affine(scale=(0.82, 1.18), translate_percent=(-0.06, 0.06), rotate=(-25, 25), p=0.5),
                 A.RandomBrightnessContrast(p=0.35),
             ]
         )
@@ -79,7 +93,7 @@ def get_week6_transforms(image_size: int = 512, train: bool = True, advanced: bo
                 _optional_transform(lambda: A.GaussNoise(p=0.25)),
                 _optional_transform(lambda: A.MotionBlur(blur_limit=5, p=0.15)),
                 _optional_transform(lambda: A.GridDistortion(num_steps=5, distort_limit=0.08, p=0.15)),
-                _optional_transform(lambda: A.CoarseDropout(max_holes=8, max_height=48, max_width=48, p=0.2)),
+                _optional_transform(lambda: build_coarse_dropout(p=0.2)),
                 RandomDisasterIntensityShift(p=0.35),
                 RandomCloudSmoke(p=0.2),
             ]
