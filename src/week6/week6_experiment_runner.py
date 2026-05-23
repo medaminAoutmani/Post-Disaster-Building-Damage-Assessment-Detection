@@ -333,10 +333,16 @@ def run_optuna_hpo(args: argparse.Namespace) -> None:
     hpo_dir = args.results_root / "hyperparameter_optimization" / args.optuna_study_name
     hpo_dir.mkdir(parents=True, exist_ok=True)
     storage = args.optuna_storage or f"sqlite:///{(hpo_dir / 'study.db').as_posix()}"
+    pruner = {
+        "median": optuna.pruners.MedianPruner(),
+        "successive_halving": optuna.pruners.SuccessiveHalvingPruner(),
+        "none": optuna.pruners.NopPruner(),
+    }[args.optuna_pruner]
     study = optuna.create_study(
         study_name=args.optuna_study_name,
         direction="maximize",
         storage=storage,
+        pruner=pruner,
         load_if_exists=True,
     )
 
@@ -365,7 +371,7 @@ def run_optuna_hpo(args: argparse.Namespace) -> None:
         trial_args.class_weights = [1.0, 0.2, minor_weight, major_weight, destroyed_weight]
         trial_args.experiment_name = f"experiment_{args.experiment}_optuna_trial_{trial.number:03d}"
 
-        experiment_dir = train_experiment(trial_args)
+        experiment_dir = train_experiment(trial_args, optuna_trial=trial)
         metrics = load_final_metrics(experiment_dir)
         mean_dice = float(metrics.get("val_mean_dice", 0.0))
         rare_recall = float(metrics.get("val_rare_class_recall", 0.0))
@@ -422,7 +428,7 @@ def make_kfold_split_dirs(args: argparse.Namespace) -> list[Path]:
     return fold_dirs
 
 
-def train_experiment(args: argparse.Namespace) -> Path:
+def train_experiment(args: argparse.Namespace, optuna_trial=None) -> Path:
     preset = EXPERIMENTS.get(args.experiment, {})
     model_name = args.model or preset.get("model", "attention_unet")
     loss_name = args.loss or preset.get("loss", "focal")
@@ -535,6 +541,11 @@ def train_experiment(args: argparse.Namespace) -> Path:
             val_metrics["dice_major_damage"],
             val_metrics["dice_destroyed"],
         )
+        if optuna_trial is not None:
+            objective_value = val_metrics["mean_dice"] + args.optuna_rare_recall_weight * val_metrics["rare_class_recall"]
+            optuna_trial.report(objective_value, epoch)
+            if optuna_trial.should_prune():
+                raise optuna.TrialPruned()
 
         improved = val_metrics["mean_dice"] > best_val_dice + args.early_stopping_min_delta
         if improved:
@@ -621,6 +632,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--optuna-study", action="store_true", help="Run a cheap Optuna HPO study instead of one normal experiment.")
     parser.add_argument("--optuna-study-name", default="morocco_week6_hpo")
     parser.add_argument("--optuna-storage", default=None, help="Optuna storage URL. Defaults to a local SQLite DB in results/week6.")
+    parser.add_argument("--optuna-pruner", choices=["median", "successive_halving", "none"], default="median", help="Select Optuna pruner for early stopping of bad trials.")
     parser.add_argument("--optuna-trials", type=int, default=12)
     parser.add_argument("--optuna-epochs", type=int, default=6)
     parser.add_argument("--optuna-max-train-samples", type=int, default=2000)
