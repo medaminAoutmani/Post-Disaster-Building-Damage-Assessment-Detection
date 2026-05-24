@@ -58,6 +58,17 @@ src/
     +-- week7_train_cbam.py
     +-- week7_train_nonlocal.py
     +-- week7_inference.py
++-- week8/
+    +-- week8_class_distribution.py
+    +-- week8_prune_dataset.py
+    +-- week8_select_minority_samples.py
+    +-- week8_prepare_balanced_data.py
++-- week9/
+    +-- week9_dataset.py
+    +-- week9_model_multitask_siamese.py
+    +-- week9_losses.py
+    +-- week9_metrics.py
+    +-- week9_train_multitask.py
 splits/
 +-- train.txt
 +-- val.txt
@@ -71,6 +82,7 @@ results/
 +-- week6/
 +-- week7/
 +-- week8/
++-- week9/
 ```
 
 The raw dataset is intentionally ignored by Git with `.gitignore`.
@@ -85,6 +97,7 @@ The raw dataset is intentionally ignored by Git with `.gitignore`.
 - Week 6: research experiments with isolated runs, ablations, advanced losses, samplers, metrics, and upgraded architectures
 - Week 7: temporal attention-based Siamese damage segmentation with fusion and attention ablations
 - Week 8: rare-class imbalance audit and targeted data expansion, especially for minor damage
+- Week 9: multi-task Siamese damage segmentation with auxiliary building-mask supervision
 
 See `PROJECT_REPORT.md` for the full project report.
 
@@ -318,6 +331,61 @@ results/week8/minority_before_after.csv
 ```
 
 The original `splits/train.txt`, `splits/val.txt`, and `splits/test.txt` are not modified.
+
+Week 9 multi-task Siamese roadmap:
+
+```text
+Goal:
+Train a multi-task Siamese ResNet50-UNet that jointly predicts:
+- pre-disaster building mask
+- post-disaster building mask
+- 5-class damage mask
+
+Best Week 7 starting point:
+Siamese ResNet50-UNet + difference fusion + CBAM
+
+Week 9 additions:
+- shared ResNet50 encoder
+- auxiliary pre/post building heads
+- damage classification head
+- multi-task loss: pre building + post building + 3 * damage
+- warmup cosine scheduler
+- gradient clipping
+- stronger rare-class weights
+- optional Week 8 selected extra training samples
+```
+
+Run Week 9A multi-task architecture without attention, using the old training set only:
+
+```powershell
+python src\week9\week9_train_multitask.py --experiment multitask_difference --morocco-adaptation --epochs 50 --batch-size 4 --encoder-lr 0.0001 --fusion-lr 0.0003 --decoder-lr 0.0005 --scheduler warmup_cosine --damage-class-weights 1 2 8 12 12 --lambda-pre 1 --lambda-post 1 --lambda-damage 3 --grad-clip-norm 1.0
+```
+
+Run Week 9B multi-task CBAM with the old training set only:
+
+```powershell
+python src\week9\week9_train_multitask.py --experiment multitask_cbam_difference --morocco-adaptation --epochs 50 --batch-size 4 --encoder-lr 0.0001 --fusion-lr 0.0003 --decoder-lr 0.0005 --scheduler warmup_cosine --damage-class-weights 1 2 8 12 12 --lambda-pre 1 --lambda-post 1 --lambda-damage 3 --grad-clip-norm 1.0
+```
+
+Run Week 9C multi-task CBAM with the old training set plus selected Week 8 extra samples:
+
+```powershell
+python src\week9\week9_train_multitask.py --experiment multitask_cbam_difference --experiment-name experiment_multitask_cbam_difference_week8_extra --morocco-adaptation --use-week8-extra --epochs 50 --batch-size 4 --encoder-lr 0.0001 --fusion-lr 0.0003 --decoder-lr 0.0005 --scheduler warmup_cosine --damage-class-weights 1 2 8 12 12 --lambda-pre 1 --lambda-post 1 --lambda-damage 3 --grad-clip-norm 1.0
+```
+
+Run Week 9D loss-balancing ablation after Week 9B/9C:
+
+```powershell
+python src\week9\week9_train_multitask.py --experiment multitask_cbam_difference --experiment-name experiment_multitask_cbam_lambda_damage_1 --morocco-adaptation --use-week8-extra --epochs 50 --lambda-damage 1
+python src\week9\week9_train_multitask.py --experiment multitask_cbam_difference --experiment-name experiment_multitask_cbam_lambda_damage_2 --morocco-adaptation --use-week8-extra --epochs 50 --lambda-damage 2
+python src\week9\week9_train_multitask.py --experiment multitask_cbam_difference --experiment-name experiment_multitask_cbam_lambda_damage_5 --morocco-adaptation --use-week8-extra --epochs 50 --lambda-damage 5
+```
+
+Retry non-local attention only after CBAM is stable:
+
+```powershell
+python src\week9\week9_train_multitask.py --experiment multitask_nonlocal_difference --morocco-adaptation --use-week8-extra --epochs 50 --batch-size 2 --encoder-lr 0.00005 --fusion-lr 0.0001 --decoder-lr 0.0002 --no-amp --grad-clip-norm 1.0
+```
 
 By default, experiment artifacts are saved under:
 
