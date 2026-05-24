@@ -300,6 +300,25 @@ py src\week8\week8_select_minority_samples.py --candidate-data-dir path\to\downl
 
 This writes `results/week8/selected_extra_minority_samples.csv`. Prioritize samples with many `minor_damage` and `major_damage` buildings; keep validation and test unchanged.
 
+Copy selected samples into a separate project folder, create a balanced Week 8 train split, and compare before/after minority counts:
+
+```powershell
+py src\week8\week8_prepare_balanced_data.py --selected-csv results\week8\selected_extra_minority_samples.csv --top-k 500
+```
+
+This creates:
+
+```text
+data/week8_extra/train/images/
+data/week8_extra/train/labels/
+splits/week8_train_balanced.txt
+results/week8/copied_extra_minority_samples.csv
+results/week8/class_distribution_week8_before_after.csv
+results/week8/minority_before_after.csv
+```
+
+The original `splits/train.txt`, `splits/val.txt`, and `splits/test.txt` are not modified.
+
 By default, experiment artifacts are saved under:
 
 ```text
