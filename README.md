@@ -292,6 +292,14 @@ py src\week8\week8_prune_dataset.py --mode both
 
 This writes `results/week8/deletion_candidates.csv` and does not delete files unless `--delete --confirm-delete DELETE_NON_MOROCCO_DATA` are both provided.
 
+After downloading an extra xBD full-data part, rank minority-rich samples before merging anything:
+
+```powershell
+py src\week8\week8_select_minority_samples.py --candidate-data-dir path\to\downloaded_xbd_part --morocco-adaptation --min-minor-buildings 1 --min-minority-pixels 100 --top-k 500
+```
+
+This writes `results/week8/selected_extra_minority_samples.csv`. Prioritize samples with many `minor_damage` and `major_damage` buildings; keep validation and test unchanged.
+
 By default, experiment artifacts are saved under:
 
 ```text
