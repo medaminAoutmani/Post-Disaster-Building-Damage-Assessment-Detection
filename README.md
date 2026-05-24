@@ -39,6 +39,25 @@ src/
     +-- week6_train_resnet50_unet.py
     +-- week6_experiment_runner.py
     +-- week6_inference.py
++-- week7/
+    +-- week7_experiment_runner.py
+    +-- week7_dataset.py
+    +-- week7_temporal_fusion.py
+    +-- week7_attention.py
+    +-- week7_losses.py
+    +-- week7_metrics.py
+    +-- week7_visualization.py
+    +-- week7_analysis.py
+    +-- week7_utils.py
+    +-- week7_callbacks.py
+    +-- week7_model_siamese_resnet50_unet.py
+    +-- week7_model_siamese_attention_unet.py
+    +-- week7_model_siamese_deeplab.py
+    +-- week7_train_siamese_baseline.py
+    +-- week7_train_siamese_attention.py
+    +-- week7_train_cbam.py
+    +-- week7_train_nonlocal.py
+    +-- week7_inference.py
 splits/
 +-- train.txt
 +-- val.txt
@@ -50,6 +69,7 @@ results/
 +-- week4/
 +-- week5/
 +-- week6/
++-- week7/
 ```
 
 The raw dataset is intentionally ignored by Git with `.gitignore`.
@@ -62,6 +82,7 @@ The raw dataset is intentionally ignored by Git with `.gitignore`.
 - Week 4: U-Net with a pretrained ResNet34 encoder for stronger feature extraction
 - Week 5: multiclass damage segmentation for background, no damage, minor damage, major damage, and destroyed
 - Week 6: research experiments with isolated runs, ablations, advanced losses, samplers, metrics, and upgraded architectures
+- Week 7: temporal attention-based Siamese damage segmentation with fusion and attention ablations
 
 See `PROJECT_REPORT.md` for the full project report.
 
@@ -176,6 +197,52 @@ Refresh Week 6 comparative summaries:
 
 ```powershell
 python src\week6\week6_experiment_runner.py --summarize-only
+```
+
+Create the Week 7 temporal Siamese result tree:
+
+```powershell
+python src\week7\week7_experiment_runner.py --scaffold-only
+```
+
+Recommended Week 7 order:
+
+```text
+siamese_concat -> siamese_difference -> siamese_bottleneck_attention -> siamese_cbam -> siamese_nonlocal
+```
+
+Week 7 Phase 1 uses the best Week 6 ResNet50-UNet hyperparameters with separate Siamese learning-rate groups:
+
+```text
+encoder_lr=0.00028325734588543713
+fusion_lr=0.0003
+decoder_lr=0.0008129702163604196
+loss=cross_entropy_dice
+sampler=weighted
+scheduler=reduce_on_plateau
+batch_size=4
+class_weights=1.0 0.2 1.4323335332729514 2.817887932741608 2.301194607934551
+```
+
+Run Week 7 temporal baselines:
+
+```powershell
+python src\week7\week7_experiment_runner.py --experiment siamese_concat --morocco-adaptation --epochs 20 --batch-size 4 --encoder-lr 0.00028325734588543713 --fusion-lr 0.0003 --decoder-lr 0.0008129702163604196 --loss cross_entropy_dice --sampler weighted --scheduler reduce_on_plateau --class-weights 1.0 0.2 1.4323335332729514 2.817887932741608 2.301194607934551
+python src\week7\week7_experiment_runner.py --experiment siamese_difference --morocco-adaptation --epochs 20 --batch-size 4 --encoder-lr 0.00028325734588543713 --fusion-lr 0.0003 --decoder-lr 0.0008129702163604196 --loss cross_entropy_dice --sampler weighted --scheduler reduce_on_plateau --class-weights 1.0 0.2 1.4323335332729514 2.817887932741608 2.301194607934551
+```
+
+Run Week 7 attention experiments:
+
+```powershell
+python src\week7\week7_experiment_runner.py --experiment siamese_bottleneck_attention --morocco-adaptation --epochs 20 --batch-size 4 --encoder-lr 0.00028325734588543713 --fusion-lr 0.0003 --decoder-lr 0.0008129702163604196 --loss cross_entropy_dice --sampler weighted --scheduler reduce_on_plateau --class-weights 1.0 0.2 1.4323335332729514 2.817887932741608 2.301194607934551
+python src\week7\week7_experiment_runner.py --experiment siamese_cbam --morocco-adaptation --epochs 20 --batch-size 4 --encoder-lr 0.00028325734588543713 --fusion-lr 0.0003 --decoder-lr 0.0008129702163604196 --loss cross_entropy_dice --sampler weighted --scheduler reduce_on_plateau --class-weights 1.0 0.2 1.4323335332729514 2.817887932741608 2.301194607934551
+python src\week7\week7_experiment_runner.py --experiment siamese_nonlocal --morocco-adaptation --epochs 20 --batch-size 4 --encoder-lr 0.00028325734588543713 --fusion-lr 0.0003 --decoder-lr 0.0008129702163604196 --loss cross_entropy_dice --sampler weighted --scheduler reduce_on_plateau --class-weights 1.0 0.2 1.4323335332729514 2.817887932741608 2.301194607934551
+```
+
+Run Week 7 inference:
+
+```powershell
+python src\week7\week7_inference.py --checkpoint results\week7\experiment_siamese_concat\checkpoints\best_model.pt --fusion concat --attention no_attention
 ```
 
 By default, experiment artifacts are saved under:
