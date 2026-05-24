@@ -2,8 +2,19 @@
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
 import torch
 from torch import nn
+
+CURRENT_DIR = Path(__file__).resolve().parent
+SRC_DIR = CURRENT_DIR.parent
+WEEK7_DIR = SRC_DIR / "week7"
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
+if str(WEEK7_DIR) not in sys.path:
+    sys.path.insert(0, str(WEEK7_DIR))
 
 from week4_model import DecoderBlock
 from week7_attention import build_attention
