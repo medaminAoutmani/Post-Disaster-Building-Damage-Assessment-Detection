@@ -70,6 +70,7 @@ results/
 +-- week5/
 +-- week6/
 +-- week7/
++-- week8/
 ```
 
 The raw dataset is intentionally ignored by Git with `.gitignore`.
@@ -83,6 +84,7 @@ The raw dataset is intentionally ignored by Git with `.gitignore`.
 - Week 5: multiclass damage segmentation for background, no damage, minor damage, major damage, and destroyed
 - Week 6: research experiments with isolated runs, ablations, advanced losses, samplers, metrics, and upgraded architectures
 - Week 7: temporal attention-based Siamese damage segmentation with fusion and attention ablations
+- Week 8: rare-class imbalance audit and targeted data expansion, especially for minor damage
 
 See `PROJECT_REPORT.md` for the full project report.
 
@@ -244,6 +246,51 @@ Run Week 7 inference:
 ```powershell
 python src\week7\week7_inference.py --checkpoint results\week7\experiment_siamese_concat\checkpoints\best_model.pt --fusion concat --attention no_attention
 ```
+
+Week 8 rare-class imbalance task:
+
+```text
+Goal:
+Audit the current Morocco-focused train/val data before downloading extra xBD metadata parts.
+
+Current issue:
+Week 7 models learn background, no_damage, and destroyed reasonably well, but minor_damage remains near zero.
+
+Step 1 - Compute current class distribution:
+- pixels per class for train and val
+- images containing each class for train and val
+- buildings/polygons per class for train and val
+- per-disaster class distribution for earthquake, flood/flooding, wildfire/fire
+
+Step 2 - Decide what extra data is needed:
+- prioritize minor_damage samples first
+- add major_damage samples only if major remains weak
+- add destroyed samples only if needed, because destroyed is already learned better
+
+Step 3 - Download targeted xBD full-data metadata parts:
+- inspect metadata before adding images
+- keep only samples that contain useful minority-class buildings/pixels
+- prefer earthquake, flood/flooding, wildfire/fire to stay close to the Morocco adaptation target
+
+Step 4 - Preserve fair evaluation:
+- add extra samples only to the training split
+- keep validation and test unchanged
+- avoid adding train samples from scenes/disasters that leak into val/test
+
+Expected output:
+- results/week8/class_distribution_train_val.csv
+- results/week8/per_disaster_class_distribution.csv
+- results/week8/selected_extra_minority_samples.csv
+- updated training split for the balanced Week 8 experiment
+```
+
+Find non-Morocco or invalid samples that can be removed to save storage:
+
+```powershell
+py src\week8\week8_prune_dataset.py --mode both
+```
+
+This writes `results/week8/deletion_candidates.csv` and does not delete files unless `--delete --confirm-delete DELETE_NON_MOROCCO_DATA` are both provided.
 
 By default, experiment artifacts are saved under:
 
