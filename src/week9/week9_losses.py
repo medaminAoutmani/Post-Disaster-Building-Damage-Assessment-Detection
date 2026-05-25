@@ -69,10 +69,50 @@ class BuildingMaskedDamageCEDiceLoss(nn.Module):
         return ce_loss + dice_loss
 
 
+class SoftBuildingWeightedDamageCEDiceLoss(nn.Module):
+    """Damage CE+Dice with reduced but nonzero background contribution."""
+
+    def __init__(
+        self,
+        class_weights: list[float] | None = None,
+        background_pixel_weight: float = 0.2,
+        building_pixel_weight: float = 1.0,
+        eps: float = 1e-7,
+    ) -> None:
+        super().__init__()
+        self.background_pixel_weight = background_pixel_weight
+        self.building_pixel_weight = building_pixel_weight
+        self.eps = eps
+        self.register_buffer(
+            "class_weights",
+            torch.as_tensor(class_weights, dtype=torch.float32) if class_weights is not None else None,
+        )
+
+    def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        targets = targets.long()
+        pixel_weights = torch.full_like(targets, self.background_pixel_weight, dtype=logits.dtype)
+        pixel_weights = torch.where(targets > 0, torch.full_like(pixel_weights, self.building_pixel_weight), pixel_weights)
+
+        ce_map = F.cross_entropy(logits, targets, weight=self.class_weights, reduction="none")
+        ce_loss = (ce_map * pixel_weights).sum() / pixel_weights.sum().clamp_min(self.eps)
+
+        probabilities = torch.softmax(logits, dim=1)
+        target_one_hot = F.one_hot(targets, num_classes=logits.shape[1]).permute(0, 3, 1, 2).float()
+        weights = pixel_weights.unsqueeze(1)
+        dims = (0, 2, 3)
+        intersection = (probabilities * target_one_hot * weights).sum(dim=dims)
+        denominator = ((probabilities + target_one_hot) * weights).sum(dim=dims)
+        dice = (2.0 * intersection + self.eps) / (denominator + self.eps)
+        dice_loss = 1.0 - dice[1:].mean()
+        return ce_loss + dice_loss
+
+
 def build_damage_loss(name: str, class_weights: list[float] | None = None) -> nn.Module:
     normalized = name.lower().replace("-", "_")
     if normalized in {"building_masked_ce_dice", "masked_ce_dice", "building_masked_cross_entropy_dice"}:
         return BuildingMaskedDamageCEDiceLoss(class_weights)
+    if normalized in {"soft_building_weighted_ce_dice", "soft_masked_ce_dice", "soft_building_masked_ce_dice"}:
+        return SoftBuildingWeightedDamageCEDiceLoss(class_weights)
     return build_loss(name, class_weights)
 
 

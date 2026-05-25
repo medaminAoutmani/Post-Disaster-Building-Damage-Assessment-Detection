@@ -71,6 +71,7 @@ src/
     +-- week9_train_multitask.py
 +-- week10/
     +-- week10_train_masked_loss.py
+    +-- week10_train_soft_masked_loss.py
 splits/
 +-- train.txt
 +-- val.txt
@@ -421,6 +422,32 @@ Run Week 10A-2 using top150 Week 8 extra samples:
 
 ```powershell
 python src\week10\week10_train_masked_loss.py --experiment multitask_cbam_difference --experiment-name experiment_week10a_masked_loss_week8_extra_top150 --morocco-adaptation --use-week8-extra --max-extra-samples 150 --epochs 50 --batch-size 4 --encoder-lr 0.0001 --fusion-lr 0.0003 --decoder-lr 0.0005 --scheduler warmup_cosine --damage-class-weights 1 2 6 10 10 --lambda-pre 1 --lambda-post 1 --lambda-damage 3 --grad-clip-norm 1.0
+```
+
+Week 10A.1 soft building-weighted damage loss:
+
+```text
+Rationale:
+The hard masked loss removes almost all background supervision. Soft weighting keeps background pixels in the objective with lower weight while emphasizing building pixels.
+
+Damage pixel weights:
+- background pixels: 0.2
+- building pixels: 1.0
+
+Loss:
+soft weighted CE + soft weighted Dice on damage classes
+```
+
+Recommended Week 10A.1 run using old/current training data only:
+
+```powershell
+python src\week10\week10_train_soft_masked_loss.py --experiment multitask_cbam_difference --morocco-adaptation --epochs 50 --batch-size 4 --encoder-lr 0.0001 --fusion-lr 0.0003 --decoder-lr 0.0005 --scheduler warmup_cosine --damage-class-weights 1 2 6 10 10 --lambda-pre 1 --lambda-post 1 --lambda-damage 3 --grad-clip-norm 1.0
+```
+
+Only run the top150 extra version after the old-data soft loss is stable:
+
+```powershell
+python src\week10\week10_train_soft_masked_loss.py --experiment multitask_cbam_difference --experiment-name experiment_week10a1_soft_masked_loss_week8_extra_top150 --morocco-adaptation --use-week8-extra --max-extra-samples 150 --epochs 50 --batch-size 4 --encoder-lr 0.0001 --fusion-lr 0.0003 --decoder-lr 0.0005 --scheduler warmup_cosine --damage-class-weights 1 2 6 10 10 --lambda-pre 1 --lambda-post 1 --lambda-damage 3 --grad-clip-norm 1.0
 ```
 
 By default, experiment artifacts are saved under:
