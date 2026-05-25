@@ -36,6 +36,46 @@ class BuildingCEDiceLoss(nn.Module):
         return self.cross_entropy(logits, targets.long()) + self.dice(logits, targets)
 
 
+class BuildingMaskedDamageCEDiceLoss(nn.Module):
+    """Damage CE+Dice computed only on ground-truth building pixels."""
+
+    def __init__(self, class_weights: list[float] | None = None, eps: float = 1e-7) -> None:
+        super().__init__()
+        self.eps = eps
+        self.register_buffer(
+            "class_weights",
+            torch.as_tensor(class_weights, dtype=torch.float32) if class_weights is not None else None,
+        )
+
+    def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        targets = targets.long()
+        valid = targets > 0
+        if not bool(valid.any()):
+            return logits.new_tensor(0.0)
+
+        ce_map = F.cross_entropy(logits, targets, weight=self.class_weights, reduction="none")
+        ce_loss = ce_map[valid].mean()
+
+        probabilities = torch.softmax(logits, dim=1)
+        target_one_hot = F.one_hot(targets, num_classes=logits.shape[1]).permute(0, 3, 1, 2).float()
+        valid_mask = valid.unsqueeze(1).float()
+        probabilities = probabilities * valid_mask
+        target_one_hot = target_one_hot * valid_mask
+        dims = (0, 2, 3)
+        intersection = (probabilities * target_one_hot).sum(dim=dims)
+        denominator = probabilities.sum(dim=dims) + target_one_hot.sum(dim=dims)
+        dice = (2.0 * intersection + self.eps) / (denominator + self.eps)
+        dice_loss = 1.0 - dice[1:].mean()
+        return ce_loss + dice_loss
+
+
+def build_damage_loss(name: str, class_weights: list[float] | None = None) -> nn.Module:
+    normalized = name.lower().replace("-", "_")
+    if normalized in {"building_masked_ce_dice", "masked_ce_dice", "building_masked_cross_entropy_dice"}:
+        return BuildingMaskedDamageCEDiceLoss(class_weights)
+    return build_loss(name, class_weights)
+
+
 class MultiTaskDamageLoss(nn.Module):
     def __init__(
         self,
@@ -49,7 +89,7 @@ class MultiTaskDamageLoss(nn.Module):
         super().__init__()
         self.pre_loss = BuildingCEDiceLoss(building_class_weights)
         self.post_loss = BuildingCEDiceLoss(building_class_weights)
-        self.damage_loss = build_loss(damage_loss_name, damage_class_weights)
+        self.damage_loss = build_damage_loss(damage_loss_name, damage_class_weights)
         self.lambda_pre = lambda_pre
         self.lambda_post = lambda_post
         self.lambda_damage = lambda_damage

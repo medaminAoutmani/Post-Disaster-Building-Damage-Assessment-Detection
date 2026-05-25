@@ -69,6 +69,8 @@ src/
     +-- week9_losses.py
     +-- week9_metrics.py
     +-- week9_train_multitask.py
++-- week10/
+    +-- week10_train_masked_loss.py
 splits/
 +-- train.txt
 +-- val.txt
@@ -83,6 +85,7 @@ results/
 +-- week7/
 +-- week8/
 +-- week9/
++-- week10/
 ```
 
 The raw dataset is intentionally ignored by Git with `.gitignore`.
@@ -98,6 +101,7 @@ The raw dataset is intentionally ignored by Git with `.gitignore`.
 - Week 7: temporal attention-based Siamese damage segmentation with fusion and attention ablations
 - Week 8: rare-class imbalance audit and targeted data expansion, especially for minor damage
 - Week 9: multi-task Siamese damage segmentation with auxiliary building-mask supervision
+- Week 10: building-masked damage loss for rare-class learning on building pixels only
 
 See `PROJECT_REPORT.md` for the full project report.
 
@@ -385,6 +389,38 @@ Retry non-local attention only after CBAM is stable:
 
 ```powershell
 python src\week9\week9_train_multitask.py --experiment multitask_nonlocal_difference --morocco-adaptation --use-week8-extra --epochs 50 --batch-size 2 --encoder-lr 0.00005 --fusion-lr 0.0001 --decoder-lr 0.0002 --no-amp --grad-clip-norm 1.0
+```
+
+Week 10A building-masked damage loss:
+
+```text
+Goal:
+Keep the Week 9 multi-task CBAM architecture fixed, but compute damage loss only on ground-truth building pixels.
+
+Hypothesis:
+Damage labels are meaningful only where damage_mask > 0. Masking background pixels during damage CE+Dice should reduce background dominance and improve minor/rare-class learning.
+
+Fixed architecture:
+- multi-task Siamese ResNet50-UNet
+- difference fusion
+- CBAM
+- pre/post building heads
+- damage head
+
+Only changed component:
+- damage loss: building_masked_ce_dice
+```
+
+Run Week 10A-1 using old/current training data only:
+
+```powershell
+python src\week10\week10_train_masked_loss.py --experiment multitask_cbam_difference --morocco-adaptation --epochs 50 --batch-size 4 --encoder-lr 0.0001 --fusion-lr 0.0003 --decoder-lr 0.0005 --scheduler warmup_cosine --damage-class-weights 1 2 6 10 10 --lambda-pre 1 --lambda-post 1 --lambda-damage 3 --grad-clip-norm 1.0
+```
+
+Run Week 10A-2 using top150 Week 8 extra samples:
+
+```powershell
+python src\week10\week10_train_masked_loss.py --experiment multitask_cbam_difference --experiment-name experiment_week10a_masked_loss_week8_extra_top150 --morocco-adaptation --use-week8-extra --max-extra-samples 150 --epochs 50 --batch-size 4 --encoder-lr 0.0001 --fusion-lr 0.0003 --decoder-lr 0.0005 --scheduler warmup_cosine --damage-class-weights 1 2 6 10 10 --lambda-pre 1 --lambda-post 1 --lambda-damage 3 --grad-clip-norm 1.0
 ```
 
 By default, experiment artifacts are saved under:
