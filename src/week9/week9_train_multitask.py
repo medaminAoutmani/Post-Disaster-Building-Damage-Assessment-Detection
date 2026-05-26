@@ -241,6 +241,9 @@ def train_experiment(args: argparse.Namespace) -> Path:
             "damage_loss": args.damage_loss,
             "damage_class_weights": args.damage_class_weights,
             "building_class_weights": args.building_class_weights,
+            "sampler": args.sampler,
+            "week10b_trial": getattr(args, "week10b_trial", None),
+            "week10b_loss": getattr(args, "week10b_loss", None),
             "lambda_pre": args.lambda_pre,
             "lambda_post": args.lambda_post,
             "lambda_damage": args.lambda_damage,
@@ -347,6 +350,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--scheduler", default="warmup_cosine")
     parser.add_argument("--damage-class-weights", type=float, nargs=5, default=[1.0, 2.0, 8.0, 12.0, 12.0])
     parser.add_argument("--building-class-weights", type=float, nargs=2, default=[1.0, 10.0])
+    parser.add_argument("--week10b-trial", choices=["a", "b", "c"], default="a")
+    parser.add_argument("--week10b-loss", choices=["weighted_ce", "weighted_ce_dice", "focal"], default="weighted_ce")
     parser.add_argument("--lambda-pre", type=float, default=1.0)
     parser.add_argument("--lambda-post", type=float, default=1.0)
     parser.add_argument("--lambda-damage", type=float, default=3.0)

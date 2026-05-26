@@ -71,6 +71,7 @@ src/
     +-- week9_train_multitask.py
 +-- week10/
     +-- week10_train_masked_loss.py
+    +-- week10_train_class_weighted_ce.py
     +-- week10_train_soft_masked_loss.py
 splits/
 +-- train.txt
@@ -448,6 +449,51 @@ Only run the top150 extra version after the old-data soft loss is stable:
 
 ```powershell
 python src\week10\week10_train_soft_masked_loss.py --experiment multitask_cbam_difference --experiment-name experiment_week10a1_soft_masked_loss_week8_extra_top150 --morocco-adaptation --use-week8-extra --max-extra-samples 150 --epochs 50 --batch-size 4 --encoder-lr 0.0001 --fusion-lr 0.0003 --decoder-lr 0.0005 --scheduler warmup_cosine --damage-class-weights 1 2 6 10 10 --lambda-pre 1 --lambda-post 1 --lambda-damage 3 --grad-clip-norm 1.0
+```
+
+Week 10B class-weighted damage loss:
+
+```text
+Goal:
+Keep the Week 9 multi-task CBAM architecture fixed, but return to full-image damage supervision and target the minor-damage failure with class weights.
+
+Primary metric:
+- minor_damage Dice and IoU
+- rare_class_recall
+
+Secondary metrics:
+- overall damage mean Dice
+- destroyed Dice
+- pre/post building Dice
+
+Trial weights:
+- A: [1.0, 1.0, 2.5, 1.5, 1.2]
+- B: [1.0, 1.0, 4.0, 1.5, 1.2]
+- C: [1.0, 1.0, 6.0, 2.0, 1.5]
+```
+
+Run Week 10B Trial A, the recommended first run:
+
+```powershell
+python src\week10\week10_train_class_weighted_ce.py --experiment multitask_cbam_difference --week10b-trial a --week10b-loss weighted_ce --morocco-adaptation --epochs 50 --batch-size 4 --encoder-lr 0.0001 --fusion-lr 0.0003 --decoder-lr 0.0005 --sampler shuffle --scheduler warmup_cosine --lambda-pre 1 --lambda-post 1 --lambda-damage 3 --grad-clip-norm 1.0
+```
+
+Run Trial B only if Trial A improves minor damage without a large global Dice drop:
+
+```powershell
+python src\week10\week10_train_class_weighted_ce.py --experiment multitask_cbam_difference --week10b-trial b --week10b-loss weighted_ce --morocco-adaptation --epochs 50 --batch-size 4 --encoder-lr 0.0001 --fusion-lr 0.0003 --decoder-lr 0.0005 --sampler shuffle --scheduler warmup_cosine --lambda-pre 1 --lambda-post 1 --lambda-damage 3 --grad-clip-norm 1.0
+```
+
+If weighted CE helps, test weighted CE + multiclass Dice with 0.7/0.3 weighting:
+
+```powershell
+python src\week10\week10_train_class_weighted_ce.py --experiment multitask_cbam_difference --week10b-trial a --week10b-loss weighted_ce_dice --morocco-adaptation --epochs 50 --batch-size 4 --encoder-lr 0.0001 --fusion-lr 0.0003 --decoder-lr 0.0005 --sampler shuffle --scheduler warmup_cosine --lambda-pre 1 --lambda-post 1 --lambda-damage 3 --grad-clip-norm 1.0
+```
+
+Use focal CE only if weighted CE plateaus:
+
+```powershell
+python src\week10\week10_train_class_weighted_ce.py --experiment multitask_cbam_difference --week10b-trial b --week10b-loss focal --morocco-adaptation --epochs 50 --batch-size 4 --encoder-lr 0.0001 --fusion-lr 0.0003 --decoder-lr 0.0005 --sampler shuffle --scheduler warmup_cosine --lambda-pre 1 --lambda-post 1 --lambda-damage 3 --grad-clip-norm 1.0
 ```
 
 By default, experiment artifacts are saved under:

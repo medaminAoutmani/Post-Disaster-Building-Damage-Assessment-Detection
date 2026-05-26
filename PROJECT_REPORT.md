@@ -11,15 +11,20 @@ The dataset contains:
 - JSON label files containing building polygons
 - Damage labels such as `no-damage`, `minor-damage`, `major-damage`, `destroyed`, and `un-classified`
 
-The current project focuses on binary building segmentation. This means the model learns to predict whether each pixel belongs to a labeled building or background. The pre-disaster and post-disaster images are stacked together as a 6-channel input, allowing the model to use both before-and-after visual information.
+The project begins with binary building segmentation, where the model learns whether each pixel belongs to a labeled building or background. It then extends the same pipeline into multiclass damage segmentation, temporal Siamese modeling, class-imbalance handling, and multi-task learning. In the early models, the pre-disaster and post-disaster images are stacked together as a 6-channel input. In the later Siamese models, the two images are processed as separate RGB streams and fused at the feature level.
 
-The current pipeline is divided into three completed stages, with a fourth stage planned:
+The current pipeline is divided into ten development stages:
 
 1. Week 1: Data exploration, preprocessing, visualization, and mask generation
 2. Week 2: Dataset pipeline, train/validation/test splits, and the first baseline U-Net
 3. Week 3: A separate improved baseline with cleaner data, stronger training, prediction visualization, overfit testing, and better metrics
 4. Week 4: U-Net upgrade with a pretrained ResNet34 encoder
 5. Week 5: Multiclass disaster damage segmentation
+6. Week 6: Research experiment framework, ablation studies, upgraded architectures, advanced losses, samplers, schedulers, and visual analysis
+7. Week 7: Temporal Siamese damage segmentation with explicit pre/post feature fusion and attention modules
+8. Week 8: Rare-class imbalance audit and targeted data expansion for minority damage classes
+9. Week 9: Multi-task Siamese segmentation with auxiliary pre-disaster and post-disaster building supervision
+10. Week 10: Building-aware damage losses that focus optimization on meaningful damage pixels
 
 ## Week 1: Preprocessing and Data Understanding
 
@@ -316,13 +321,36 @@ results/
 |   +-- metrics/
 |   +-- predictions/
 |   \-- visualizations/
-\-- week5/
-    +-- checkpoints/
-    +-- config/
-    +-- confusion_matrices/
-    +-- metrics/
-    +-- predictions/
-    \-- visualizations/
++-- week5/
+|   +-- checkpoints/
+|   +-- config/
+|   +-- confusion_matrices/
+|   +-- metrics/
+|   +-- predictions/
+|   \-- visualizations/
++-- week6/
+|   +-- experiment_baseline/
+|   +-- experiment_attention_unet/
+|   +-- experiment_resnet50/
+|   +-- hyperparameter_optimization/
+|   \-- comparative summaries
++-- week7/
+|   +-- experiment_siamese_concat/
+|   +-- experiment_siamese_difference/
+|   +-- experiment_siamese_cbam/
+|   \-- experiment_siamese_nonlocal/
++-- week8/
+|   +-- class_distribution_train_val.csv
+|   +-- per_disaster_class_distribution.csv
+|   +-- selected_extra_minority_samples.csv
+|   \-- balanced-data audit files
++-- week9/
+|   +-- experiment_multitask_difference/
+|   +-- experiment_multitask_cbam_difference/
+|   \-- loss-balancing ablations
+\-- week10/
+    +-- experiment_week10a_building_masked_damage_loss/
+    \-- experiment_week10a1_soft_masked_damage_loss/
 ```
 
 Each folder has a clear purpose:
@@ -335,6 +363,11 @@ Each folder has a clear purpose:
 | `results/week3/` | Week 3 metrics, config, checkpoints, prediction panels, visualizations, and failure analysis |
 | `results/week4/` | Week 4 pretrained-encoder metrics, config, checkpoints, prediction panels, visualizations, and failure analysis |
 | `results/week5/` | Week 5 multiclass metrics, confusion matrices, color-mask predictions, checkpoints, and failure analysis |
+| `results/week6/` | Isolated research experiment folders, ablation summaries, HPO studies, TensorBoard logs, precision-recall curves, and qualitative panels |
+| `results/week7/` | Temporal Siamese experiment folders, fusion/attention comparisons, temporal difference outputs, and attention-oriented analysis |
+| `results/week8/` | Class-distribution audits, per-disaster class summaries, selected minority sample lists, and balanced split reports |
+| `results/week9/` | Multi-task Siamese experiment outputs, auxiliary building metrics, damage metrics, checkpoints, and lambda ablation summaries |
+| `results/week10/` | Building-masked and soft building-weighted damage-loss experiments using the Week 9 architecture |
 
 ## How to Run the Project
 
@@ -368,6 +401,42 @@ Train the Week 5 multiclass damage model:
 python src\week5_train.py --epochs 20 --batch-size 4 --image-size 512
 ```
 
+Create the Week 6 research result tree:
+
+```powershell
+python src\week6\week6_experiment_runner.py --scaffold-only
+```
+
+Run the Week 6 Morocco-focused research suite:
+
+```powershell
+.\run_week6_experiments.ps1
+```
+
+Run a Week 7 temporal Siamese baseline:
+
+```powershell
+python src\week7\week7_experiment_runner.py --experiment siamese_difference --morocco-adaptation --epochs 20 --batch-size 4
+```
+
+Run the Week 8 class-imbalance audit:
+
+```powershell
+python src\week8\week8_class_distribution.py --data-dir data --split-dir splits --output-dir results\week8 --morocco-adaptation
+```
+
+Run the Week 9 multi-task Siamese model:
+
+```powershell
+python src\week9\week9_train_multitask.py --experiment multitask_cbam_difference --morocco-adaptation --epochs 50 --batch-size 4
+```
+
+Run the Week 10 building-masked damage-loss experiment:
+
+```powershell
+python src\week10\week10_train_masked_loss.py --experiment multitask_cbam_difference --morocco-adaptation --epochs 50 --batch-size 4
+```
+
 Run the overfit debugging test:
 
 ```powershell
@@ -391,6 +460,11 @@ The project now has a complete baseline segmentation system:
 - Dataset statistics are available for the report.
 - A Week 4 ResNet34 encoder U-Net is available as the next model upgrade.
 - A Week 5 multiclass damage segmentation model is available for severity prediction.
+- Week 6 provides a reusable research experiment framework for ablations, HPO, samplers, advanced losses, and model comparisons.
+- Week 7 provides temporal Siamese models that process pre-disaster and post-disaster images as separate streams before feature fusion.
+- Week 8 provides rare-class auditing and targeted sample selection for improving minor/major/destroyed learning.
+- Week 9 provides a multi-task Siamese architecture with auxiliary building-mask heads and a damage head.
+- Week 10 provides building-aware damage-loss experiments that reduce background dominance during training.
 - An overfit test is available for debugging the full pipeline.
 
 ## Week 4 Model
@@ -561,14 +635,670 @@ results/week5/confusion_matrices/
 
 These are useful for studying common errors such as minor-to-major confusion or major-to-destroyed confusion.
 
+## Week 6: Research Experiment Framework and Architecture Ablations
+
+Week 6 turns the Week 5 multiclass baseline into a more complete research platform. Instead of training one model at a time with separate scripts, Week 6 introduces an experiment runner that can build different models, losses, samplers, schedulers, metrics, visualizations, and output folders from one controlled interface.
+
+The main Week 6 files are:
+
+```text
+src/week6/week6_experiment_runner.py
+src/week6/week6_model_attention_unet.py
+src/week6/week6_model_unetplusplus.py
+src/week6/week6_model_resnet50_unet.py
+src/week6/week6_model_deeplabv3plus.py
+src/week6/week6_losses.py
+src/week6/week6_sampler.py
+src/week6/week6_metrics.py
+src/week6/week6_visualization.py
+src/week6/week6_scheduler.py
+src/week6/week6_analysis.py
+src/week6/week6_utils.py
+```
+
+### Experiment Runner Architecture
+
+The central controller is `week6_experiment_runner.py`. It receives command-line settings, creates isolated result folders, builds the selected model, prepares train/validation dataloaders, trains the model, evaluates metrics, saves checkpoints, and writes summary artifacts.
+
+The runner is organized around a repeatable experiment lifecycle:
+
+1. Read split files and optionally filter sample IDs for Morocco-relevant disasters such as earthquake, flood, flooding, wildfire, and fire.
+2. Build dataloaders using the shared xBD dataset pipeline and Week 6 augmentations.
+3. Build the selected architecture through `build_model`.
+4. Build the selected loss through `build_loss`.
+5. Optionally build class-aware sampling through `build_weighted_sampler`.
+6. Train and validate for each epoch.
+7. Save the best checkpoint, metrics CSV files, per-class metrics, confusion matrices, precision-recall rows, and qualitative panels.
+8. Optionally run multi-seed, k-fold, or Optuna hyperparameter optimization workflows.
+
+This design matters because later experiments can be compared fairly. Each run has its own folder, configuration file, metrics history, and visual outputs, so a new experiment does not overwrite older baselines.
+
+### Week 6 Input and Target Format
+
+Week 6 continues to use paired pre/post images as a 6-channel tensor:
+
+```text
+[pre_R, pre_G, pre_B, post_R, post_G, post_B]
+```
+
+The target remains a multiclass damage mask:
+
+```text
+[H, W] with class IDs 0-4
+```
+
+The output of every Week 6 model is:
+
+```text
+[batch_size, 5, H, W]
+```
+
+where the five channels represent background, no damage, minor damage, major damage, and destroyed.
+
+### Attention U-Net
+
+The scratch Attention U-Net is implemented in:
+
+```text
+src/week6/week6_model_attention_unet.py
+```
+
+Its architecture is:
+
+- A 6-channel input convolution block
+- Four encoder levels with max-pooling
+- A bottleneck convolution block
+- Four decoder levels with transposed-convolution upsampling
+- Attention gates on skip connections
+- A final 1x1 convolution that maps decoder features to five damage classes
+
+The attention gate receives two feature maps: the decoder gate feature and the matching encoder skip feature. Both are projected with 1x1 convolutions, added together, passed through ReLU, reduced to a single attention map, and passed through sigmoid. The skip feature is multiplied by this attention map before it is concatenated with the decoder feature.
+
+This means the decoder does not receive every skip feature equally. It learns to emphasize spatial regions that are useful for damage prediction and reduce irrelevant background detail.
+
+### UNet++ Architecture
+
+UNet++ is implemented in:
+
+```text
+src/week6/week6_model_unetplusplus.py
+```
+
+The key idea is nested skip connections. A normal U-Net has one skip path from each encoder level to each decoder level. UNet++ creates intermediate decoder nodes such as `x0_1`, `x0_2`, `x0_3`, and `x0_4`, where each node combines features from multiple earlier nodes and an upsampled deeper feature.
+
+This gives the model a denser multi-scale feature path. For satellite damage segmentation, this is useful because:
+
+- Tiny buildings need high-resolution detail.
+- Large building blocks need broader context.
+- Damage boundaries may be subtle and spatially fragmented.
+- Nested skip paths help bridge the semantic gap between shallow texture features and deep disaster-context features.
+
+The final prediction comes from the deepest nested decoder node `x0_4`, then a 1x1 head maps it to five classes.
+
+### ResNet50 U-Net
+
+The Week 6 ResNet50 U-Net is implemented in:
+
+```text
+src/week6/week6_model_resnet50_unet.py
+```
+
+This model upgrades the Week 4 ResNet34 idea to a deeper ResNet50 encoder. Since ResNet50 normally expects a 3-channel RGB image, the first convolution is adapted to accept the 6-channel pre/post stack. The encoder then produces a feature pyramid:
+
+| Feature level | Channels | Purpose |
+|---|---:|---|
+| stem | 64 | Low-level edges, roofs, roads, and texture |
+| encoder1 | 256 | Local building parts |
+| encoder2 | 512 | Mid-level object patterns |
+| encoder3 | 1024 | Larger spatial and disaster context |
+| encoder4 | 2048 | Deep semantic representation |
+
+The decoder uses the `DecoderBlock` pattern from the earlier ResNet U-Net code. It upsamples deep features and combines them with matching skip features:
+
+```text
+enc4 -> decoder4 + enc3
+decoder4 -> decoder3 + enc2
+decoder3 -> decoder2 + enc1
+decoder2 -> decoder1 + stem
+decoder1 -> final upsample -> 5-class head
+```
+
+The pretrained encoder provides stronger visual features than the scratch Week 5 model, while the U-Net decoder restores pixel-level resolution for segmentation.
+
+### DeepLabV3-Based Experiment
+
+Week 6 also includes a DeepLab-style experiment wrapper:
+
+```text
+src/week6/week6_model_deeplabv3plus.py
+```
+
+The filename is kept for continuity, while the saved metadata uses the correct DeepLabV3 architecture name. DeepLab is useful as a comparison point because it uses atrous convolution and broader context aggregation rather than the pure U-Net skip-decoder design. This helps test whether disaster damage segmentation benefits more from dense local boundaries or larger contextual receptive fields.
+
+### Loss Functions
+
+Week 6 introduces a loss factory in:
+
+```text
+src/week6/week6_losses.py
+```
+
+Supported losses include:
+
+- CrossEntropy + Dice
+- Focal loss
+- Tversky loss
+- Focal Tversky loss
+- Combined loss wrappers
+
+These losses address class imbalance in different ways. CrossEntropy provides stable class supervision. Dice improves region overlap. Focal loss emphasizes difficult pixels. Tversky-style losses allow false positives and false negatives to be weighted differently, which is useful when rare damage classes are missed.
+
+### Samplers, Schedulers, and Metrics
+
+`week6_sampler.py` adds class-aware sampling so batches can contain more images with rare damage classes. This is important because minor and major damage appear far less often than no-damage buildings.
+
+`week6_scheduler.py` supports learning-rate strategies such as ReduceLROnPlateau and warmup cosine scheduling. This makes longer research runs more stable than a fixed learning rate.
+
+`week6_metrics.py` expands evaluation beyond one mean score. It computes confusion matrices, per-class Dice, IoU, boundary IoU, mean IoU, and precision-recall points. Boundary IoU is especially useful for segmentation because two masks can have similar class counts but poor building outlines.
+
+### Visualization and Analysis
+
+`week6_visualization.py` saves qualitative outputs such as:
+
+- Prediction panels
+- Color masks
+- Overlays
+- Confidence maps
+- Error heatmaps
+
+This makes Week 6 a research-quality experiment layer, not only a training script. The user can inspect whether improvements are real or only metric artifacts.
+
+## Week 7: Temporal Siamese Damage Segmentation
+
+Week 7 changes the way the model sees time. Earlier models stack pre-disaster and post-disaster RGB images into one 6-channel tensor at the input. This is simple, but it forces the first convolution layer to learn temporal comparison immediately.
+
+Week 7 separates the two images into two temporal streams:
+
+```text
+pre-disaster RGB image  -> pre encoder
+post-disaster RGB image -> post encoder
+```
+
+Then it fuses features at multiple semantic levels before decoding a damage mask.
+
+The main Week 7 files are:
+
+```text
+src/week7/week7_dataset.py
+src/week7/week7_model_siamese_resnet50_unet.py
+src/week7/week7_temporal_fusion.py
+src/week7/week7_attention.py
+src/week7/week7_experiment_runner.py
+src/week7/week7_losses.py
+src/week7/week7_metrics.py
+src/week7/week7_visualization.py
+src/week7/week7_inference.py
+```
+
+### Dataset Interface
+
+`XBDTemporalDamageDataset` wraps the existing xBD dataset and splits the 6-channel tensor into two RGB tensors:
+
+```text
+image[:3]   -> pre_image
+image[3:6] -> post_image
+```
+
+The returned batch contains:
+
+```text
+pre_image
+post_image
+image
+mask
+sample_id
+```
+
+This keeps compatibility with the older dataset pipeline while giving temporal models a cleaner input format.
+
+### Siamese ResNet50 Encoder
+
+The core Week 7 model is:
+
+```text
+src/week7/week7_model_siamese_resnet50_unet.py
+```
+
+Each RGB image is processed by a ResNet50 encoder that returns a feature pyramid:
+
+```text
+stem, enc1, enc2, enc3, enc4
+```
+
+The model can use separate pre/post encoders or share the same encoder weights. Separate encoders allow each temporal branch to specialize, while shared encoders force both images into the same feature space and reduce parameters.
+
+### Temporal Fusion
+
+Temporal fusion is implemented in:
+
+```text
+src/week7/week7_temporal_fusion.py
+```
+
+The fusion module compares pre-disaster and post-disaster features at each encoder level. It supports:
+
+| Strategy | Description |
+|---|---|
+| concat | Concatenates pre and post features |
+| difference | Uses absolute feature difference |
+| concat_difference | Concatenates pre, post, and absolute difference |
+| gated_fusion | Learns a sigmoid gate that blends pre and post features per pixel |
+
+After fusion, a 1x1 projection maps the fused tensor back to the original channel count. This is important because the decoder expects the same channel dimensions regardless of fusion strategy.
+
+The difference strategy is especially meaningful for damage detection because damage is a change over time. It forces the model to focus on what changed between the pre and post images rather than treating both images as unrelated channels.
+
+### Attention Modules
+
+Week 7 introduces bottleneck attention modules in:
+
+```text
+src/week7/week7_attention.py
+```
+
+Available attention types include:
+
+- Identity attention for baseline comparison
+- Squeeze-and-excitation channel attention
+- CBAM channel + spatial attention
+- Non-local self-attention
+
+CBAM first estimates which channels are important, then estimates which spatial regions are important. Non-local attention models long-range relationships across the feature map. In disaster imagery, this can help because damaged neighborhoods, flood regions, and fire-affected areas often have spatial structure larger than one building.
+
+### Week 7 Decoder and Output
+
+After temporal fusion, the decoder follows a U-Net pattern:
+
+```text
+fused enc4 -> attention -> decoder4 with fused enc3
+decoder4  -> decoder3 with fused enc2
+decoder3  -> decoder2 with fused enc1
+decoder2  -> decoder1 with fused stem
+decoder1  -> final upsample -> 5-class damage head
+```
+
+The output is still:
+
+```text
+[batch_size, 5, H, W]
+```
+
+but the internal representation is now explicitly temporal. This is a major architectural step because the model no longer has to discover temporal comparison only from the first convolution.
+
+## Week 8: Rare-Class Imbalance Audit and Targeted Data Expansion
+
+Week 8 is not primarily a neural-network architecture week. It is a data architecture week. The problem discovered after multiclass training is that rare damage classes, especially `minor_damage`, are much harder to learn than background, no-damage, and destroyed.
+
+The main Week 8 files are:
+
+```text
+src/week8/week8_class_distribution.py
+src/week8/week8_select_minority_samples.py
+src/week8/week8_prepare_balanced_data.py
+src/week8/week8_prune_dataset.py
+```
+
+### Class-Distribution Audit
+
+`week8_class_distribution.py` reads train/validation split files, loads post-disaster labels, rasterizes WKT polygons into class-id masks, and counts:
+
+- Pixels per class
+- Images containing each class
+- Building polygons per class
+- Per-disaster class distributions
+
+The script groups samples by disaster keywords such as earthquake, flood, flooding, wildfire, and fire. This is useful because the project is oriented toward Morocco-relevant disaster types, and the class imbalance may differ by disaster family.
+
+### Data Selection Architecture
+
+`week8_select_minority_samples.py` scans candidate xBD data and ranks samples by rare-class usefulness. Instead of blindly adding more images, the project selects samples that actually contain useful minority damage classes.
+
+The selection logic checks:
+
+- Whether the candidate has matching pre image, post image, and label JSON
+- Whether the sample belongs to the desired disaster scope
+- Whether the label contains valid damage classes
+- Whether minority-class buildings and pixels are present
+- Whether the sample is useful enough to keep
+
+The output is:
+
+```text
+results/week8/selected_extra_minority_samples.csv
+```
+
+This file becomes a controlled bridge between raw downloaded xBD data and the training set.
+
+### Balanced Training Split
+
+`week8_prepare_balanced_data.py` copies selected extra samples into a separate folder:
+
+```text
+data/week8_extra/
+```
+
+and creates:
+
+```text
+splits/week8_train_balanced.txt
+```
+
+The original train, validation, and test split files are not modified. This is an important experimental design choice because validation and test results stay comparable. Week 8 expands only the training data.
+
+### Pruning Support
+
+`week8_prune_dataset.py` identifies non-Morocco-scope or invalid samples that can be removed to save storage. It writes deletion candidates first and only deletes files when explicit confirmation flags are provided.
+
+Week 8 therefore acts as a controlled data-governance layer: audit, select, copy, compare, and preserve fair evaluation.
+
+## Week 9: Multi-Task Siamese Damage Segmentation
+
+Week 9 introduces the most complete model architecture in the project. The model predicts three related outputs at once:
+
+```text
+1. Pre-disaster building mask
+2. Post-disaster building mask
+3. Multiclass damage mask
+```
+
+The main Week 9 files are:
+
+```text
+src/week9/week9_dataset.py
+src/week9/week9_model_multitask_siamese.py
+src/week9/week9_losses.py
+src/week9/week9_metrics.py
+src/week9/week9_train_multitask.py
+```
+
+### Why Multi-Task Learning Is Used
+
+Damage classification depends on knowing where buildings are. Background pixels do not have meaningful damage states. Earlier models had to learn building localization and damage severity from only one damage mask. Week 9 makes this dependency explicit by adding auxiliary building-mask tasks.
+
+The intended learning signal is:
+
+- The pre-building head teaches the model where buildings existed before the disaster.
+- The post-building head teaches the model where visible buildings or building remains appear after the disaster.
+- The damage head learns severity using a feature representation already shaped by building supervision.
+
+This is especially helpful for rare classes because the model receives dense building-boundary supervision even when rare damage pixels are scarce.
+
+### Dataset Output
+
+`XBDMultiTaskSampleDataset` returns:
+
+```text
+pre_image
+post_image
+pre_building_mask
+post_building_mask
+damage_mask
+sample_id
+```
+
+The building masks are binary class-id masks, while the damage mask is the five-class xBD target. `XBDMultiTaskCombinedDataset` can combine the original training set with selected Week 8 extra samples.
+
+### Multi-Task Siamese Architecture
+
+The model is implemented in:
+
+```text
+src/week9/week9_model_multitask_siamese.py
+```
+
+It uses a shared ResNet50 encoder for both temporal images:
+
+```text
+pre_image  -> shared ResNet50 encoder
+post_image -> shared ResNet50 encoder
+```
+
+The shared encoder produces feature pyramids for both images:
+
+```text
+stem, enc1, enc2, enc3, enc4
+```
+
+Each corresponding feature level is fused through `TemporalFusion`. By default, Week 9 uses difference fusion with CBAM attention:
+
+```text
+fused[level] = TemporalFusion(pre[level], post[level])
+```
+
+The fused deep feature `enc4` is passed through bottleneck attention, then the U-Net decoder reconstructs high-resolution segmentation features:
+
+```text
+fused enc4 -> CBAM -> decoder4 + fused enc3
+decoder4  -> decoder3 + fused enc2
+decoder3  -> decoder2 + fused enc1
+decoder2  -> decoder1 + fused stem
+decoder1  -> final upsample
+```
+
+The final feature map is shared by three heads:
+
+| Head | Output channels | Meaning |
+|---|---:|---|
+| pre_building_head | 2 | background vs pre-disaster building |
+| post_building_head | 2 | background vs post-disaster building |
+| damage_head | 5 | background, no damage, minor, major, destroyed |
+
+The forward pass returns a dictionary:
+
+```text
+pre_building_logits
+post_building_logits
+damage_logits
+```
+
+This architecture keeps one shared temporal representation but lets each task have its own final classifier.
+
+### Multi-Task Loss
+
+`MultiTaskDamageLoss` combines three losses:
+
+```text
+total_loss =
+    lambda_pre * pre_building_loss
+  + lambda_post * post_building_loss
+  + lambda_damage * damage_loss
+```
+
+The default intent is to give damage prediction the largest weight:
+
+```text
+lambda_pre = 1
+lambda_post = 1
+lambda_damage = 3
+```
+
+The building losses use binary CrossEntropy-style class prediction through two-logit CrossEntropy plus foreground Dice. The damage loss can use the Week 6 loss factory, including CrossEntropy + Dice or rare-class weighted variants.
+
+### Optimizer Architecture
+
+Week 9 uses parameter groups:
+
+- Encoder learning rate
+- Fusion learning rate
+- Decoder/head learning rate
+
+This is useful because pretrained encoder features often need smaller updates, while newly initialized fusion, decoder, and output heads need faster learning.
+
+### Week 9 Metrics
+
+The metric layer reports building-task and damage-task behavior separately. This matters because a model may segment buildings well but still confuse minor, major, and destroyed classes. Week 9 also supports damage confusion excluding background so the analysis focuses on mistakes between building damage classes.
+
+## Week 10: Building-Aware Damage Losses
+
+Week 10 keeps the Week 9 multi-task Siamese CBAM architecture fixed and changes the damage loss. This isolates the experiment: if performance changes, the difference comes from the objective function rather than a new model.
+
+The main Week 10 files are:
+
+```text
+src/week10/week10_train_masked_loss.py
+src/week10/week10_train_soft_masked_loss.py
+src/week10/week10_train_class_weighted_ce.py
+src/week9/week9_losses.py
+```
+
+### Motivation
+
+Damage labels are meaningful mainly on building pixels. In a full satellite image, most pixels are background: roads, fields, water, empty ground, and vegetation. If loss is computed equally over all pixels, the background can dominate optimization.
+
+Week 10 tests whether damage learning improves when the loss pays more attention to building pixels.
+
+### Week 10A: Hard Building-Masked Damage Loss
+
+`week10_train_masked_loss.py` sets:
+
+```text
+damage_loss = "building_masked_ce_dice"
+```
+
+This uses `BuildingMaskedDamageCEDiceLoss`. The loss creates a valid-pixel mask:
+
+```text
+valid = targets > 0
+```
+
+Only foreground building pixels contribute to the damage CrossEntropy and Dice terms. If a batch has no building pixels, the damage loss returns zero for that batch.
+
+The advantage is that the objective focuses on classifying building damage severity. The risk is that the model receives much less background supervision for the damage head, so false positives outside buildings must be monitored carefully.
+
+### Week 10A.1: Soft Building-Weighted Damage Loss
+
+`week10_train_soft_masked_loss.py` sets:
+
+```text
+damage_loss = "soft_building_weighted_ce_dice"
+```
+
+This uses `SoftBuildingWeightedDamageCEDiceLoss`. Instead of removing background pixels entirely, it gives pixels different weights:
+
+```text
+background pixels: 0.2
+building pixels:   1.0
+```
+
+This keeps background supervision in the objective while still emphasizing the pixels where damage labels matter most. It is a compromise between ordinary full-image loss and hard foreground-only loss.
+
+### Week 10A.1 Results Interpretation
+
+The soft building-weighted loss was more stable than the hard building-masked loss, but it did not outperform the earlier plain full-image CrossEntropy damage baseline overall.
+
+The earlier baseline used:
+
+```text
+loss_damage = CrossEntropy(damage_logits, damage_targets)
+```
+
+Against that baseline, the soft building-weighted experiment showed a small improvement in building-only damage Dice and rare-class recall, but it reduced the main global damage metrics and weakened the auxiliary building segmentation heads.
+
+| Metric | Plain CE baseline | Soft building-weighted loss |
+|---|---:|---:|
+| best epoch | 32 | 26 |
+| val damage mean Dice | 0.5399 | 0.4592 |
+| val building-only damage mean Dice | 0.6298 | 0.6427 |
+| val pre-building Dice | 0.7667 | 0.7267 |
+| val post-building Dice | 0.7650 | 0.7283 |
+| val damage pixel accuracy | 0.9574 | 0.9186 |
+| val rare-class recall | 0.4896 | 0.5025 |
+| val minor-damage Dice | 0.0464 | 0.0588 |
+| val major-damage Dice | 0.5543 | 0.4440 |
+| val destroyed Dice | 0.7834 | 0.6655 |
+
+This means the soft weighting experiment was useful diagnostically, but it was not a better default objective. The small gains in building-only damage Dice, rare-class recall, and minor-damage Dice were not large enough to justify the losses in global damage Dice, building Dice, major-damage Dice, destroyed Dice, and pixel accuracy.
+
+The likely explanation is that background pixels are not merely easy negatives. They help the model learn global context, non-building suppression, and building boundaries. Reducing their contribution too aggressively, even with a soft weight of 0.2, weakened the shared representation used by both the building heads and the damage head.
+
+The main remaining failure mode is therefore not background dominance. It is minor-damage separability. Both the plain CE baseline and the soft building-weighted model perform poorly on minor damage:
+
+| Metric | Plain CE baseline | Soft building-weighted loss |
+|---|---:|---:|
+| val damage Dice, minor damage | 0.0464 | 0.0588 |
+| val building-only Dice, minor damage | 0.0518 | 0.0733 |
+
+The soft loss improves minor damage slightly, but the absolute score remains very low. Future work should treat plain CE as the stronger baseline and focus on targeted minor-damage improvements such as moderate class weighting, focal loss with a low gamma, rare-class oversampling, or label-quality inspection for visually ambiguous minor-damage cases.
+
+### Week 10B: Class-Weighted Full-Image Damage Loss
+
+Week 10B keeps the lesson from Week 10A.1: background supervision should remain active. Instead of masking or strongly down-weighting background pixels, Week 10B returns to full-image damage loss and uses class weights to focus specifically on the weak class, minor damage.
+
+The new runner is:
+
+```text
+src/week10/week10_train_class_weighted_ce.py
+```
+
+The highest-priority experiment is class-weighted CrossEntropy:
+
+```text
+damage_loss = "weighted_cross_entropy"
+```
+
+The trial weight sets are:
+
+| Trial | background | no damage | minor damage | major damage | destroyed |
+|---|---:|---:|---:|---:|---:|
+| A, conservative | 1.0 | 1.0 | 2.5 | 1.5 | 1.2 |
+| B, stronger minority push | 1.0 | 1.0 | 4.0 | 1.5 | 1.2 |
+| C, aggressive | 1.0 | 1.0 | 6.0 | 2.0 | 1.5 |
+
+Trial A should run first. Trial B should run only if Trial A improves minor damage without a large drop in global damage Dice. Trial C should be reserved for cases where Trial B clearly improves minor damage and the model still has enough global stability.
+
+The recommended Week 10B runs use the normal shuffled dataloader rather than the class-aware weighted sampler. This isolates the effect of the loss weights from the effect of sample oversampling.
+
+If weighted CE improves the minor-damage metrics, Week 10B also supports weighted CE plus multiclass Dice:
+
+```text
+damage_loss = "weighted_cross_entropy_dice"
+loss = 0.7 * weighted_ce + 0.3 * multiclass_dice
+```
+
+This combines CE's pixel classification signal with Dice's overlap consistency. The Dice term is multiclass Dice and ignores background by default.
+
+If weighted CE plateaus, Week 10B can switch to focal CE:
+
+```text
+damage_loss = "focal"
+gamma = 2.0
+alpha = selected trial class weights
+```
+
+The most important monitoring metrics for Week 10B are minor-damage Dice, minor-damage IoU, and rare-class recall. Overall damage mean Dice, destroyed Dice, and the pre/post building Dice scores should be monitored as stability checks.
+
+### Week 10 Relationship to Week 9
+
+Week 10 reuses:
+
+- The Week 9 dataset
+- The Week 9 multi-task Siamese model
+- The Week 9 training loop
+- The Week 9 optimizer groups
+- The Week 9 metrics
+
+Only the damage-loss function and result root are changed. This makes Week 10 a clean ablation study on loss design.
+
 ## Future Extensions
 
-After the Week 5 multiclass baseline, the next improvements should focus on making damage severity prediction more reliable:
+After the Week 10 building-aware loss experiments, the next improvements should focus on making damage severity prediction more reliable:
 
-- Compare baseline multiclass training against class-weighted training.
-- Compare frozen and unfrozen pretrained encoders.
-- Tune separate encoder and decoder learning rates.
-- Test larger or stronger encoders such as ResNet50 or EfficientNet.
-- Add disaster-type performance breakdowns.
+- Treat the plain full-image CrossEntropy damage objective as the current stronger baseline.
+- If soft building weighting is tested again, use milder background weights such as 0.5 or 0.7 instead of 0.2.
+- Use Week 8 balanced training splits to test whether extra minority samples improve minor-damage Dice.
+- Tune the balance between building auxiliary losses and damage loss.
+- Compare focal loss, moderate class-weighted CrossEntropy, and rare-class oversampling under the same Week 9 architecture.
+- Add disaster-type performance breakdowns for each final model.
 - Add confusion-matrix discussion for minor/major/destroyed mistakes.
 - Investigate crop-based high-resolution training for tiny buildings.
+- Test larger encoders or transformer-based segmentation backbones if GPU memory allows.

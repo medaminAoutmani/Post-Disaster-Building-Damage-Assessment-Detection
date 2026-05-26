@@ -116,6 +116,8 @@ def build_loss(name: str, class_weights: list[float] | torch.Tensor | None = Non
     """Factory used by experiment scripts."""
     normalized = name.lower().replace("-", "_")
     weights = torch.as_tensor(class_weights, dtype=torch.float32) if class_weights is not None else None
+    if normalized in {"cross_entropy", "ce", "weighted_cross_entropy", "weighted_ce"}:
+        return nn.CrossEntropyLoss(weight=weights)
     if normalized == "dice":
         return DiceLoss()
     if normalized == "focal_loss" or normalized == "focal":
@@ -126,5 +128,6 @@ def build_loss(name: str, class_weights: list[float] | torch.Tensor | None = Non
         return FocalTverskyLoss()
     if normalized in {"cross_entropy_dice", "ce_dice", "combined"}:
         return CombinedLoss([nn.CrossEntropyLoss(weight=weights), DiceLoss()], [1.0, 1.0])
+    if normalized in {"weighted_cross_entropy_dice", "weighted_ce_dice", "ce_dice_0_7_0_3"}:
+        return CombinedLoss([nn.CrossEntropyLoss(weight=weights), DiceLoss()], [0.7, 0.3])
     raise ValueError(f"Unknown Week 6 loss: {name}")
-
