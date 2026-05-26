@@ -130,4 +130,6 @@ def build_loss(name: str, class_weights: list[float] | torch.Tensor | None = Non
         return CombinedLoss([nn.CrossEntropyLoss(weight=weights), DiceLoss()], [1.0, 1.0])
     if normalized in {"weighted_cross_entropy_dice", "weighted_ce_dice", "ce_dice_0_7_0_3"}:
         return CombinedLoss([nn.CrossEntropyLoss(weight=weights), DiceLoss()], [0.7, 0.3])
+    if normalized in {"focal_ce_dice", "focal_dice", "focal_ce_dice_0_7_0_3"}:
+        return CombinedLoss([FocalLoss(alpha=weights, gamma=2.0), DiceLoss()], [0.7, 0.3])
     raise ValueError(f"Unknown Week 6 loss: {name}")

@@ -351,7 +351,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--damage-class-weights", type=float, nargs=5, default=[1.0, 2.0, 8.0, 12.0, 12.0])
     parser.add_argument("--building-class-weights", type=float, nargs=2, default=[1.0, 10.0])
     parser.add_argument("--week10b-trial", choices=["a", "b", "c"], default="a")
-    parser.add_argument("--week10b-loss", choices=["ce_dice", "weighted_ce", "weighted_ce_dice", "focal"], default="ce_dice")
+    parser.add_argument(
+        "--week10b-loss",
+        choices=["ce_dice", "focal_ce_dice", "weighted_ce", "weighted_ce_dice", "focal"],
+        default="ce_dice",
+    )
     parser.add_argument("--lambda-pre", type=float, default=1.0)
     parser.add_argument("--lambda-post", type=float, default=1.0)
     parser.add_argument("--lambda-damage", type=float, default=3.0)

@@ -24,12 +24,13 @@ TRIAL_WEIGHTS = {
 
 LOSS_NAMES = {
     "ce_dice": "ce_dice_0_7_0_3",
+    "focal_ce_dice": "focal_ce_dice_0_7_0_3",
     "weighted_ce": "weighted_cross_entropy",
     "weighted_ce_dice": "weighted_cross_entropy_dice",
     "focal": "focal",
 }
 
-UNWEIGHTED_LOSSES = {"ce_dice"}
+UNWEIGHTED_LOSSES = {"ce_dice", "focal_ce_dice"}
 
 
 def main() -> None:
