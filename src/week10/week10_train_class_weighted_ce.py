@@ -1,4 +1,4 @@
-"""Train Week 10B class-weighted damage-loss experiments."""
+"""Train Week 10B damage loss-shape experiments."""
 
 from __future__ import annotations
 
@@ -23,10 +23,13 @@ TRIAL_WEIGHTS = {
 }
 
 LOSS_NAMES = {
+    "ce_dice": "ce_dice_0_7_0_3",
     "weighted_ce": "weighted_cross_entropy",
     "weighted_ce_dice": "weighted_cross_entropy_dice",
     "focal": "focal",
 }
+
+UNWEIGHTED_LOSSES = {"ce_dice"}
 
 
 def main() -> None:
@@ -34,12 +37,13 @@ def main() -> None:
     trial = args.week10b_trial
     loss_key = args.week10b_loss
     args.results_root = Path("results") / "week10"
-    args.damage_class_weights = TRIAL_WEIGHTS[trial]
+    args.damage_class_weights = None if loss_key in UNWEIGHTED_LOSSES else TRIAL_WEIGHTS[trial]
     args.damage_loss = LOSS_NAMES[loss_key]
     args.sampler = "shuffle"
 
     if args.experiment_name is None:
-        args.experiment_name = f"experiment_week10b_{loss_key}_trial_{trial}"
+        suffix = "" if loss_key in UNWEIGHTED_LOSSES else f"_trial_{trial}"
+        args.experiment_name = f"experiment_week10b_{loss_key}{suffix}"
 
     experiment_dir = train_experiment(args)
     print(f"Finished {experiment_dir}")
