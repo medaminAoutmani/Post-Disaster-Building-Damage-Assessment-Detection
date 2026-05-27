@@ -46,6 +46,9 @@ EXPERIMENTS = {
     "multitask_difference": {"fusion": "difference", "attention": "no_attention"},
     "multitask_cbam_difference": {"fusion": "difference", "attention": "cbam"},
     "multitask_nonlocal_difference": {"fusion": "difference", "attention": "non_local"},
+    "multitask_concat_difference": {"fusion": "concat_difference", "attention": "no_attention"},
+    "multitask_cbam_concat_difference": {"fusion": "concat_difference", "attention": "cbam"},
+    "multitask_nonlocal_concat_difference": {"fusion": "concat_difference", "attention": "non_local"},
 }
 
 

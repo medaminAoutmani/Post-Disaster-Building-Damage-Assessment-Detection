@@ -107,12 +107,41 @@ class SoftBuildingWeightedDamageCEDiceLoss(nn.Module):
         return ce_loss + dice_loss
 
 
+class SoftBuildingWeightedDamageFocalLoss(nn.Module):
+    """Damage focal CE with reduced but nonzero background contribution."""
+
+    def __init__(
+        self,
+        background_pixel_weight: float = 0.2,
+        building_pixel_weight: float = 1.0,
+        gamma: float = 2.0,
+        eps: float = 1e-7,
+    ) -> None:
+        super().__init__()
+        self.background_pixel_weight = background_pixel_weight
+        self.building_pixel_weight = building_pixel_weight
+        self.gamma = gamma
+        self.eps = eps
+
+    def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        targets = targets.long()
+        pixel_weights = torch.full_like(targets, self.background_pixel_weight, dtype=logits.dtype)
+        pixel_weights = torch.where(targets > 0, torch.full_like(pixel_weights, self.building_pixel_weight), pixel_weights)
+
+        ce_map = F.cross_entropy(logits, targets, reduction="none")
+        pt = torch.exp(-ce_map)
+        focal_map = (1.0 - pt).pow(self.gamma) * ce_map
+        return (focal_map * pixel_weights).sum() / pixel_weights.sum().clamp_min(self.eps)
+
+
 def build_damage_loss(name: str, class_weights: list[float] | None = None) -> nn.Module:
     normalized = name.lower().replace("-", "_")
     if normalized in {"building_masked_ce_dice", "masked_ce_dice", "building_masked_cross_entropy_dice"}:
         return BuildingMaskedDamageCEDiceLoss(class_weights)
     if normalized in {"soft_building_weighted_ce_dice", "soft_masked_ce_dice", "soft_building_masked_ce_dice"}:
         return SoftBuildingWeightedDamageCEDiceLoss(class_weights)
+    if normalized in {"soft_building_weighted_focal", "soft_building_weighted_focal_ce", "soft_masked_focal"}:
+        return SoftBuildingWeightedDamageFocalLoss()
     return build_loss(name, class_weights)
 
 
