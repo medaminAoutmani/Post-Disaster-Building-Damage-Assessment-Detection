@@ -12,7 +12,7 @@ import matplotlib
 import numpy as np
 import torch
 from torch import nn
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, WeightedRandomSampler
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -37,9 +37,9 @@ def metrics_from_confusion(confusion: torch.Tensor, eps: float = 1e-7) -> dict[s
     true_positive = torch.diag(matrix)
     support = matrix.sum(dim=1)
     predicted = matrix.sum(dim=0)
-    precision = (true_positive + eps) / (predicted + eps)
-    recall = (true_positive + eps) / (support + eps)
-    f1 = (2.0 * precision * recall + eps) / (precision + recall + eps)
+    precision = true_positive / predicted.clamp_min(eps)
+    recall = true_positive / support.clamp_min(eps)
+    f1 = (2.0 * true_positive) / (support + predicted).clamp_min(eps)
     total = matrix.sum().clamp_min(eps)
 
     metrics = {
@@ -52,7 +52,37 @@ def metrics_from_confusion(confusion: torch.Tensor, eps: float = 1e-7) -> dict[s
         metrics[f"recall_{class_name}"] = float(recall[index].item())
         metrics[f"f1_{class_name}"] = float(f1[index].item())
         metrics[f"support_{class_name}"] = float(support[index].item())
+        metrics[f"predicted_{class_name}"] = float(predicted[index].item())
     return metrics
+
+
+def class_counts(dataset: BuildingDamageDataset) -> torch.Tensor:
+    """Count samples per class in a Week 11 dataset."""
+    counts = torch.zeros(len(CLASS_NAMES), dtype=torch.float32)
+    for sample in dataset.samples:
+        counts[int(sample["label"])] += 1.0
+    return counts
+
+
+def build_loss_weights(counts: torch.Tensor, mode: str, beta: float = 0.999) -> torch.Tensor | None:
+    """Build class weights for CrossEntropyLoss."""
+    if mode == "none":
+        return None
+    if mode == "inverse":
+        weights = counts.sum() / counts.clamp_min(1.0)
+    elif mode == "effective":
+        effective_num = 1.0 - torch.pow(torch.full_like(counts, beta), counts)
+        weights = (1.0 - beta) / effective_num.clamp_min(1e-7)
+    else:
+        raise ValueError(f"Unknown class weight mode: {mode}")
+    return weights / weights.mean().clamp_min(1e-7)
+
+
+def build_weighted_sampler(dataset: BuildingDamageDataset, counts: torch.Tensor) -> WeightedRandomSampler:
+    """Sample minority classes more often during training."""
+    class_weights = 1.0 / counts.clamp_min(1.0)
+    sample_weights = torch.tensor([float(class_weights[int(sample["label"])]) for sample in dataset.samples])
+    return WeightedRandomSampler(sample_weights, num_samples=len(sample_weights), replacement=True)
 
 
 def train_one_epoch(
@@ -199,16 +229,33 @@ def main() -> None:
     parser.add_argument("--weight-decay", type=float, default=1e-4)
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--pretrained", action="store_true", help="Use ImageNet ResNet18 weights if available.")
+    parser.add_argument(
+        "--class-weight-mode",
+        choices=["none", "inverse", "effective"],
+        default="none",
+        help="Class weighting for CrossEntropyLoss. Use 'effective' first for imbalanced Week 11 crops.",
+    )
+    parser.add_argument("--weighted-sampler", action="store_true", help="Use inverse-frequency weighted sampling.")
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     train_dataset = BuildingDamageDataset(args.dataset_root, "train")
     val_dataset = BuildingDamageDataset(args.dataset_root, "val")
-    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
+    train_counts = class_counts(train_dataset)
+    val_counts = class_counts(val_dataset)
+    train_sampler = build_weighted_sampler(train_dataset, train_counts) if args.weighted_sampler else None
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=args.batch_size,
+        shuffle=train_sampler is None,
+        sampler=train_sampler,
+        num_workers=args.num_workers,
+    )
     val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
 
     model = SiameseBuildingClassifier(pretrained=args.pretrained).to(device)
-    criterion = nn.CrossEntropyLoss()
+    loss_weights = build_loss_weights(train_counts, args.class_weight_mode)
+    criterion = nn.CrossEntropyLoss(weight=None if loss_weights is None else loss_weights.to(device))
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
     metrics_dir = args.results_dir / "metrics"
@@ -224,7 +271,12 @@ def main() -> None:
         "encoder": "ResNet18",
         "fusion": "concat(pre, post, diff, abs(pre-post)) embeddings",
         "loss": "CrossEntropyLoss",
+        "class_weight_mode": args.class_weight_mode,
+        "loss_weights": None if loss_weights is None else [float(value) for value in loss_weights.tolist()],
+        "weighted_sampler": args.weighted_sampler,
         "class_names": CLASS_NAMES,
+        "train_class_counts": {class_name: int(train_counts[index].item()) for index, class_name in enumerate(CLASS_NAMES)},
+        "val_class_counts": {class_name: int(val_counts[index].item()) for index, class_name in enumerate(CLASS_NAMES)},
         "batch_size": args.batch_size,
         "epochs": args.epochs,
         "lr": args.lr,
@@ -241,6 +293,9 @@ def main() -> None:
     best_confusion = torch.zeros((len(CLASS_NAMES), len(CLASS_NAMES)), dtype=torch.long)
     history: list[dict[str, float | int]] = []
     print(f"device={device} train_samples={len(train_dataset)} val_samples={len(val_dataset)}")
+    print(f"train_class_counts={config['train_class_counts']}")
+    print(f"val_class_counts={config['val_class_counts']}")
+    print(f"class_weight_mode={args.class_weight_mode} weighted_sampler={args.weighted_sampler}")
 
     for epoch in range(1, args.epochs + 1):
         train_loss, train_metrics, _ = train_one_epoch(model, train_loader, optimizer, criterion, device)

@@ -551,6 +551,12 @@ Train the first simple Siamese classifier baseline:
 python src\week11\week11_train_classifier.py --dataset-root data\week11_buildings --epochs 20 --batch-size 32
 ```
 
+If the baseline collapses toward `no_damage` and `destroyed`, run the balanced object-level baseline:
+
+```powershell
+python src\week11\week11_train_classifier.py --dataset-root data\week11_buildings --results-dir results\week11_balanced_effective_sampler --epochs 20 --batch-size 32 --class-weight-mode effective --weighted-sampler
+```
+
 The baseline uses a shared ResNet18 encoder over `pre`, `post`, and `diff` crops, then fuses:
 
 ```text
