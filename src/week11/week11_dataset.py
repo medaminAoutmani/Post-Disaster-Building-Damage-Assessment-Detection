@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import random
 from pathlib import Path
 
 import cv2
@@ -27,13 +28,40 @@ def load_rgb_tensor(path: Path, normalize: bool = True) -> torch.Tensor:
     return tensor
 
 
+def apply_train_augmentation(pre: torch.Tensor, post: torch.Tensor, diff: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Apply lightweight geometry and intensity augmentation to aligned crops."""
+    if random.random() < 0.5:
+        pre = torch.flip(pre, dims=[2])
+        post = torch.flip(post, dims=[2])
+        diff = torch.flip(diff, dims=[2])
+    if random.random() < 0.5:
+        pre = torch.flip(pre, dims=[1])
+        post = torch.flip(post, dims=[1])
+        diff = torch.flip(diff, dims=[1])
+
+    rotations = random.randint(0, 3)
+    if rotations:
+        pre = torch.rot90(pre, rotations, dims=[1, 2])
+        post = torch.rot90(post, rotations, dims=[1, 2])
+        diff = torch.rot90(diff, rotations, dims=[1, 2])
+
+    if random.random() < 0.35:
+        brightness = random.uniform(-0.08, 0.08)
+        contrast = random.uniform(0.9, 1.1)
+        pre = torch.clamp((pre - 0.5) * contrast + 0.5 + brightness, 0.0, 1.0)
+        post = torch.clamp((post - 0.5) * contrast + 0.5 + brightness, 0.0, 1.0)
+        diff = torch.abs(pre - post)
+    return pre, post, diff
+
+
 class BuildingDamageDataset(Dataset):
     """Load object-level xBD building crops saved by week11_extract_buildings.py."""
 
-    def __init__(self, dataset_root: Path, split: str, normalize: bool = True) -> None:
+    def __init__(self, dataset_root: Path, split: str, normalize: bool = True, augment: bool = False) -> None:
         self.dataset_root = Path(dataset_root)
         self.split = split
         self.normalize = normalize
+        self.augment = augment
         self.samples: list[dict[str, Path | int | str]] = []
 
         split_root = self.dataset_root / split
@@ -64,10 +92,19 @@ class BuildingDamageDataset(Dataset):
         sample_dir = Path(sample["sample_dir"])
         with (sample_dir / "metadata.json").open("r", encoding="utf-8") as file:
             metadata = json.load(file)
+        pre = load_rgb_tensor(sample_dir / "pre.png", normalize=False)
+        post = load_rgb_tensor(sample_dir / "post.png", normalize=False)
+        diff = load_rgb_tensor(sample_dir / "diff.png", normalize=False)
+        if self.augment:
+            pre, post, diff = apply_train_augmentation(pre, post, diff)
+        if self.normalize:
+            pre = (pre - IMAGENET_MEAN) / IMAGENET_STD
+            post = (post - IMAGENET_MEAN) / IMAGENET_STD
+            diff = (diff - IMAGENET_MEAN) / IMAGENET_STD
         return {
-            "pre": load_rgb_tensor(sample_dir / "pre.png", self.normalize),
-            "post": load_rgb_tensor(sample_dir / "post.png", self.normalize),
-            "diff": load_rgb_tensor(sample_dir / "diff.png", self.normalize),
+            "pre": pre,
+            "post": post,
+            "diff": diff,
             "label": int(sample["label"]),
             "class_name": str(sample["class_name"]),
             "building_id": str(sample["building_id"]),

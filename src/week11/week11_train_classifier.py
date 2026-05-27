@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import random
 import sys
 from pathlib import Path
 
@@ -62,6 +63,22 @@ def class_counts(dataset: BuildingDamageDataset) -> torch.Tensor:
     for sample in dataset.samples:
         counts[int(sample["label"])] += 1.0
     return counts
+
+
+def cap_dataset_per_class(dataset: BuildingDamageDataset, caps: list[int | None], seed: int) -> None:
+    """Limit the number of samples per class in-place for controlled imbalance experiments."""
+    if len(caps) != len(CLASS_NAMES):
+        raise ValueError(f"Expected {len(CLASS_NAMES)} class caps, got {len(caps)}")
+
+    rng = random.Random(seed)
+    capped_samples = []
+    for class_index in range(len(CLASS_NAMES)):
+        class_samples = [sample for sample in dataset.samples if int(sample["label"]) == class_index]
+        rng.shuffle(class_samples)
+        cap = caps[class_index]
+        capped_samples.extend(class_samples if cap is None else class_samples[:cap])
+    rng.shuffle(capped_samples)
+    dataset.samples = capped_samples
 
 
 def build_loss_weights(counts: torch.Tensor, mode: str, beta: float = 0.999) -> torch.Tensor | None:
@@ -229,6 +246,16 @@ def main() -> None:
     parser.add_argument("--weight-decay", type=float, default=1e-4)
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--pretrained", action="store_true", help="Use ImageNet ResNet18 weights if available.")
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--augment-train", action="store_true", help="Apply lightweight flips, rotations, and color jitter to training crops.")
+    parser.add_argument(
+        "--max-train-per-class",
+        type=int,
+        nargs=4,
+        default=None,
+        metavar=("NO_DAMAGE", "MINOR", "MAJOR", "DESTROYED"),
+        help="Cap training samples per class. Use -1 to keep all samples for a class.",
+    )
     parser.add_argument(
         "--class-weight-mode",
         choices=["none", "inverse", "effective"],
@@ -237,10 +264,15 @@ def main() -> None:
     )
     parser.add_argument("--weighted-sampler", action="store_true", help="Use inverse-frequency weighted sampling.")
     args = parser.parse_args()
+    random.seed(args.seed)
+    torch.manual_seed(args.seed)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    train_dataset = BuildingDamageDataset(args.dataset_root, "train")
+    train_dataset = BuildingDamageDataset(args.dataset_root, "train", augment=args.augment_train)
     val_dataset = BuildingDamageDataset(args.dataset_root, "val")
+    if args.max_train_per_class is not None:
+        caps = [None if value < 0 else value for value in args.max_train_per_class]
+        cap_dataset_per_class(train_dataset, caps, args.seed)
     train_counts = class_counts(train_dataset)
     val_counts = class_counts(val_dataset)
     train_sampler = build_weighted_sampler(train_dataset, train_counts) if args.weighted_sampler else None
@@ -274,6 +306,9 @@ def main() -> None:
         "class_weight_mode": args.class_weight_mode,
         "loss_weights": None if loss_weights is None else [float(value) for value in loss_weights.tolist()],
         "weighted_sampler": args.weighted_sampler,
+        "augment_train": args.augment_train,
+        "max_train_per_class": args.max_train_per_class,
+        "seed": args.seed,
         "class_names": CLASS_NAMES,
         "train_class_counts": {class_name: int(train_counts[index].item()) for index, class_name in enumerate(CLASS_NAMES)},
         "val_class_counts": {class_name: int(val_counts[index].item()) for index, class_name in enumerate(CLASS_NAMES)},
@@ -295,7 +330,10 @@ def main() -> None:
     print(f"device={device} train_samples={len(train_dataset)} val_samples={len(val_dataset)}")
     print(f"train_class_counts={config['train_class_counts']}")
     print(f"val_class_counts={config['val_class_counts']}")
-    print(f"class_weight_mode={args.class_weight_mode} weighted_sampler={args.weighted_sampler}")
+    print(
+        f"class_weight_mode={args.class_weight_mode} weighted_sampler={args.weighted_sampler} "
+        f"augment_train={args.augment_train} max_train_per_class={args.max_train_per_class}"
+    )
 
     for epoch in range(1, args.epochs + 1):
         train_loss, train_metrics, _ = train_one_epoch(model, train_loader, optimizer, criterion, device)
