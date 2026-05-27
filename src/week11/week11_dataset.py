@@ -59,7 +59,7 @@ class BuildingDamageDataset(Dataset):
     def __len__(self) -> int:
         return len(self.samples)
 
-    def __getitem__(self, index: int) -> dict[str, torch.Tensor | str | int | dict]:
+    def __getitem__(self, index: int) -> dict[str, torch.Tensor | str | int]:
         sample = self.samples[index]
         sample_dir = Path(sample["sample_dir"])
         with (sample_dir / "metadata.json").open("r", encoding="utf-8") as file:
@@ -71,5 +71,7 @@ class BuildingDamageDataset(Dataset):
             "label": int(sample["label"]),
             "class_name": str(sample["class_name"]),
             "building_id": str(sample["building_id"]),
-            "metadata": metadata,
+            "sample_id": str(metadata.get("sample_id", "")),
+            "disaster_type": str(metadata.get("disaster_type", "")),
+            "metadata_path": str(sample_dir / "metadata.json"),
         }
