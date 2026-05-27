@@ -11,9 +11,9 @@ The dataset contains:
 - JSON label files containing building polygons
 - Damage labels such as `no-damage`, `minor-damage`, `major-damage`, `destroyed`, and `un-classified`
 
-The project begins with binary building segmentation, where the model learns whether each pixel belongs to a labeled building or background. It then extends the same pipeline into multiclass damage segmentation, temporal Siamese modeling, class-imbalance handling, and multi-task learning. In the early models, the pre-disaster and post-disaster images are stacked together as a 6-channel input. In the later Siamese models, the two images are processed as separate RGB streams and fused at the feature level.
+The project begins with binary building segmentation, where the model learns whether each pixel belongs to a labeled building or background. It then extends the same pipeline into multiclass damage segmentation, temporal Siamese modeling, class-imbalance handling, and multi-task learning. In the early models, the pre-disaster and post-disaster images are stacked together as a 6-channel input. In the later Siamese models, the two images are processed as separate RGB streams and fused at the feature level. Week 11 transitions from dense pixel-level segmentation to object-level building damage classification.
 
-The current pipeline is divided into ten development stages:
+The current pipeline is divided into eleven development stages:
 
 1. Week 1: Data exploration, preprocessing, visualization, and mask generation
 2. Week 2: Dataset pipeline, train/validation/test splits, and the first baseline U-Net
@@ -25,6 +25,7 @@ The current pipeline is divided into ten development stages:
 8. Week 8: Rare-class imbalance audit and targeted data expansion for minority damage classes
 9. Week 9: Multi-task Siamese segmentation with auxiliary pre-disaster and post-disaster building supervision
 10. Week 10: Building-aware damage losses that focus optimization on meaningful damage pixels
+11. Week 11: Object-level building extraction and Siamese building damage classification
 
 ## Week 1: Preprocessing and Data Understanding
 
@@ -1289,16 +1290,157 @@ Week 10 reuses:
 
 Only the damage-loss function and result root are changed. This makes Week 10 a clean ablation study on loss design.
 
+## Week 11: Object-Level Disaster Damage Classification
+
+Week 11 changes the scientific direction of the project from dense segmentation toward building-level damage assessment. The segmentation work is treated as sufficiently mature, and architecture experimentation is frozen around the strongest design family:
+
+```text
+Siamese ResNet50-UNet
+difference fusion
+CBAM
+soft building-aware weighting or plain CE/focal CE, depending on the best final run
+```
+
+The purpose of Week 11 is to convert the xBD supervision from millions of noisy pixels into one sample per building. This creates a cleaner learning problem for damage severity because the classifier can reason over a complete object crop rather than isolated pixels.
+
+### Building Instance Extraction
+
+The new extraction script is:
+
+```text
+src/week11/week11_extract_buildings.py
+```
+
+It reads the existing xBD split files and ground-truth polygon labels. For each building polygon, it rasterizes a binary mask, applies connected components, filters tiny objects with `min_area`, and writes one sample folder per valid building. Each sample contains:
+
+```text
+pre.png
+post.png
+diff.png
+mask.png
+metadata.json
+```
+
+The metadata stores object-level information:
+
+```text
+building_id
+sample_id
+damage_class
+area
+perimeter
+centroid
+bbox
+crop_bbox
+polygon
+disaster_type
+```
+
+The output dataset is organized by split and class:
+
+```text
+data/week11_buildings/
+    train/no_damage/
+    train/minor_damage/
+    train/major_damage/
+    train/destroyed/
+    val/
+    test/
+```
+
+Recommended extraction command:
+
+```powershell
+python src\week11\week11_extract_buildings.py --output-root data\week11_buildings --crop-size 96 --padding 12 --min-area 32
+```
+
+### Building-Level Dataset and Baseline
+
+The dataset loader is:
+
+```text
+src/week11/week11_dataset.py
+```
+
+It returns normalized `pre`, `post`, and `diff` tensors plus the four-class damage label:
+
+```text
+no_damage
+minor_damage
+major_damage
+destroyed
+```
+
+The first classifier is intentionally simple:
+
+```text
+src/week11/week11_model.py
+```
+
+It uses a shared ResNet18 encoder for the three crop branches. The fusion vector is:
+
+```text
+concat(features_pre, features_post, features_diff, abs(features_pre - features_post))
+```
+
+The head is a small MLP with ReLU and dropout. The loss is plain `CrossEntropyLoss`, because the object-level classification problem should be less imbalanced than dense pixel segmentation.
+
+Training is handled by:
+
+```text
+src/week11/week11_train_classifier.py
+```
+
+Recommended first run:
+
+```powershell
+python src\week11\week11_train_classifier.py --dataset-root data\week11_buildings --epochs 20 --batch-size 32
+```
+
+Metrics include overall accuracy, macro F1, weighted F1, and per-class precision, recall, and F1. The most important early indicators are:
+
+- `recall_minor_damage`
+- `recall_major_damage`
+- macro F1
+- confusion between minor and major damage
+
+### Error Analysis
+
+Week 11 adds object-level qualitative inspection:
+
+```text
+src/week11/week11_error_analysis.py
+```
+
+This script loads the best classifier checkpoint, runs validation inference, writes a prediction record CSV, and saves pre/post/diff panels for misclassified building crops. This is a cleaner error-analysis target than pixel-level masks because each failure corresponds to one damaged building.
+
+Recommended command:
+
+```powershell
+python src\week11\week11_error_analysis.py --dataset-root data\week11_buildings --checkpoint results\week11\checkpoints\week11_siamese_resnet18_best.pt
+```
+
+### Research Transition
+
+Week 11 provides the bridge from segmentation to object-level reasoning:
+
+- Segmentation remains the building localization backbone.
+- Ground-truth polygons provide the first reliable object crops.
+- Predicted masks can later replace ground-truth masks to test end-to-end deployment.
+- Building-level confusion matrices make minor/major/destroyed ambiguity easier to study.
+- The metadata prepares the project for later morphology, graph, and TDA features.
+
+TDA is intentionally deferred until the simple object-level CNN baseline is stable. The best later integration path is to concatenate TDA features with the CNN embedding before the final MLP classifier.
+
 ## Future Extensions
 
-After the Week 10 building-aware loss experiments, the next improvements should focus on making damage severity prediction more reliable:
+After the Week 11 object-level baseline, the next improvements should focus on making damage severity prediction more reliable:
 
-- Treat the plain full-image CrossEntropy damage objective as the current stronger baseline.
-- If soft building weighting is tested again, use milder background weights such as 0.5 or 0.7 instead of 0.2.
-- Use Week 8 balanced training splits to test whether extra minority samples improve minor-damage Dice.
-- Tune the balance between building auxiliary losses and damage loss.
-- Compare focal loss, moderate class-weighted CrossEntropy, and rare-class oversampling under the same Week 9 architecture.
+- Run the full Week 11 crop extraction and train the ResNet18 Siamese baseline.
+- Compare 64x64 and 96x96 object crops.
+- Replace ground-truth object masks with predicted segmentation masks to test deployment realism.
 - Add disaster-type performance breakdowns for each final model.
 - Add confusion-matrix discussion for minor/major/destroyed mistakes.
-- Investigate crop-based high-resolution training for tiny buildings.
-- Test larger encoders or transformer-based segmentation backbones if GPU memory allows.
+- Add morphology features from object masks.
+- Add TDA features such as persistence entropy, Betti curves, contour fragmentation, and hole counts.
+- Concatenate TDA vectors with CNN embeddings after the baseline is stable.

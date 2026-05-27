@@ -1,8 +1,8 @@
 # Damage Detection Project
 
-Satellite-image building segmentation project using the xBD disaster dataset.
+Satellite-image building segmentation and object-level damage classification project using the xBD disaster dataset.
 
-The project builds a preprocessing and training pipeline for binary building segmentation from paired pre-disaster and post-disaster satellite images.
+The project builds a preprocessing and training pipeline for paired pre-disaster and post-disaster satellite images. It starts with binary and multiclass segmentation, then transitions in Week 11 to building-level damage assessment.
 
 ## Structure
 
@@ -73,6 +73,12 @@ src/
     +-- week10_train_masked_loss.py
     +-- week10_train_class_weighted_ce.py
     +-- week10_train_soft_masked_loss.py
++-- week11/
+    +-- week11_extract_buildings.py
+    +-- week11_dataset.py
+    +-- week11_model.py
+    +-- week11_train_classifier.py
+    +-- week11_error_analysis.py
 splits/
 +-- train.txt
 +-- val.txt
@@ -495,6 +501,83 @@ Use focal CE only if weighted CE plateaus:
 ```powershell
 python src\week10\week10_train_class_weighted_ce.py --experiment multitask_cbam_difference --week10b-trial b --week10b-loss focal --morocco-adaptation --epochs 50 --batch-size 4 --encoder-lr 0.0001 --fusion-lr 0.0003 --decoder-lr 0.0005 --sampler shuffle --scheduler warmup_cosine --lambda-pre 1 --lambda-post 1 --lambda-damage 3 --grad-clip-norm 1.0
 ```
+
+## Week 11 Object-Level Damage Classification
+
+Week 11 freezes segmentation architecture exploration and transitions to building-level reasoning. The best segmentation direction remains:
+
+```text
+Siamese ResNet50-UNet + difference fusion + CBAM + plain CE or focal CE
+```
+
+The new Week 11 pipeline converts xBD polygons into one sample per building:
+
+```text
+data/week11_buildings/
+    train/
+        no_damage/
+        minor_damage/
+        major_damage/
+        destroyed/
+    val/
+    test/
+```
+
+Each building sample is saved as a folder containing:
+
+```text
+pre.png
+post.png
+diff.png
+mask.png
+metadata.json
+```
+
+Create the object-level dataset from ground-truth xBD polygons:
+
+```powershell
+python src\week11\week11_extract_buildings.py --output-root data\week11_buildings --crop-size 96 --padding 12 --min-area 32
+```
+
+For a quick smoke extraction:
+
+```powershell
+python src\week11\week11_extract_buildings.py --output-root data\week11_buildings_smoke --max-samples-per-split 1 --crop-size 64
+```
+
+Train the first simple Siamese classifier baseline:
+
+```powershell
+python src\week11\week11_train_classifier.py --dataset-root data\week11_buildings --epochs 20 --batch-size 32
+```
+
+The baseline uses a shared ResNet18 encoder over `pre`, `post`, and `diff` crops, then fuses:
+
+```text
+concat(features_pre, features_post, features_diff, abs(features_pre - features_post))
+```
+
+The classifier head is a small MLP trained with `CrossEntropyLoss`. Week 11 intentionally avoids Dice, Tversky, focal, TDA, and transformer changes until this object-level baseline is stable.
+
+Run qualitative error analysis after training:
+
+```powershell
+python src\week11\week11_error_analysis.py --dataset-root data\week11_buildings --checkpoint results\week11\checkpoints\week11_siamese_resnet18_best.pt
+```
+
+Week 11 artifacts are saved under:
+
+```text
+results/week11/
+    metrics/training_log.csv
+    metrics/final_metrics.json
+    confusion_matrices/confusion_matrix.csv
+    confusion_matrices/confusion_matrix.png
+    visualizations/
+    error_analysis/
+```
+
+The most important metrics are macro F1, weighted F1, `recall_minor_damage`, and `recall_major_damage`.
 
 By default, experiment artifacts are saved under:
 
