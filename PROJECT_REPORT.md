@@ -1404,6 +1404,55 @@ Metrics include overall accuracy, macro F1, weighted F1, and per-class precision
 - macro F1
 - confusion between minor and major damage
 
+### Week 11 Results Interpretation
+
+The first object-level experiments show that the transition from dense segmentation to building-level classification is scientifically useful, but the minority damage classes remain difficult.
+
+The strongest capped and augmented Week 11 run used:
+
+```text
+Siamese ResNet18 classifier
+96x96 building crops
+pre/post/difference inputs
+effective class weighting
+weighted sampler
+training augmentation
+no_damage capped at 5000 samples
+all minor_damage, major_damage, and destroyed samples retained
+```
+
+The best validation checkpoint was epoch 23:
+
+| Metric | Value |
+|---|---:|
+| accuracy | 0.9431 |
+| macro F1 | 0.5067 |
+| weighted F1 | 0.9524 |
+| no_damage F1 | 0.9703 |
+| minor_damage F1 | 0.0262 |
+| major_damage F1 | 0.1561 |
+| destroyed F1 | 0.8743 |
+| minor_damage recall | 0.0441 |
+| major_damage recall | 0.4286 |
+| destroyed recall | 0.8922 |
+
+The object-level classifier substantially improves no-damage and destroyed classification and begins to recover major-damage buildings under capped, augmented training. However, minor damage remains poorly separable, suggesting that the main bottleneck is not architecture but class scarcity and visual ambiguity.
+
+This result is important because it changes the research diagnosis. The model is capable of learning strong object-level representations for clear classes, especially no damage and destroyed buildings. It also begins to identify major damage once the training distribution is controlled. Minor damage, however, has very few examples and is visually close to both no damage and major damage. Therefore, the next priority should be error analysis and data strategy rather than adding architectural complexity.
+
+An additional inverse-weighted experiment was tested with a stronger minority-class correction:
+
+```text
+class_weight_mode = inverse
+weighted sampler = enabled
+training augmentation = enabled
+no_damage capped at 3000 samples
+```
+
+This experiment increased minority recall, but it over-corrected the imbalance problem. At the best checkpoint, minor-damage recall rose to 0.4412 and major-damage recall rose to 0.6327, but precision collapsed to 0.0115 for minor damage and 0.0120 for major damage. The model predicted 2606 minor-damage buildings and 2574 major-damage buildings even though the validation set contained only 68 minor-damage and 49 major-damage buildings.
+
+This confirms that aggressive inverse weighting does not solve the minority damage problem. It makes the classifier sensitive to minority classes, but not discriminative. The effective-weighted capped and augmented model remains the best Week 11 baseline because it preserves strong no-damage and destroyed performance while beginning to recover major-damage buildings.
+
 ### Error Analysis
 
 Week 11 adds object-level qualitative inspection:
@@ -1430,7 +1479,72 @@ Week 11 provides the bridge from segmentation to object-level reasoning:
 - Building-level confusion matrices make minor/major/destroyed ambiguity easier to study.
 - The metadata prepares the project for later morphology, graph, and TDA features.
 
-TDA is intentionally deferred until the simple object-level CNN baseline is stable. The best later integration path is to concatenate TDA features with the CNN embedding before the final MLP classifier.
+### Phase 6: Morphology and TDA Feature Fusion
+
+Phase 6 introduces feature enrichment after establishing the object-level baseline. The implementation is intentionally conservative: it begins with classical morphology, change, and lightweight topological features before requiring external persistent-homology libraries.
+
+The feature extractor is:
+
+```text
+src/week11/week11_features.py
+```
+
+It computes features from each building crop and mask, including:
+
+- building area ratio
+- metadata area and perimeter
+- compactness
+- bounding-box aspect ratio
+- extent and solidity
+- connected-component count
+- hole count
+- Euler number
+- contour fragmentation
+- distance-transform statistics
+- pre/post edge-density change
+- mean and high-percentile image difference
+- high-difference connected components
+- high-difference Euler number and contour fragmentation
+
+These features provide the first topology-aware representation without adding a Gudhi or Ripser dependency. The topological part is not full persistent homology yet, but it captures related structural signals: connected regions, holes, fragmentation, and topology changes in high-difference regions.
+
+The extractor also supports optional persistent-homology features through Gudhi. If Gudhi is installed, cubical-complex persistence summaries are added for the building mask and high-difference regions:
+
+- dimension-0 persistence count
+- dimension-0 persistence entropy
+- dimension-0 mean lifetime
+- dimension-1 persistence count
+- dimension-1 persistence entropy
+
+If Gudhi is not installed, these persistent-homology fields are filled with zeros so the training pipeline remains runnable and the feature vector dimension stays fixed.
+
+The fusion model is:
+
+```text
+SiameseBuildingFeatureClassifier
+```
+
+It keeps the same ResNet18 Siamese image encoder and concatenates a learned handcrafted-feature embedding with the CNN embedding:
+
+```text
+final_feature = concat(
+    cnn_pre,
+    cnn_post,
+    cnn_diff,
+    abs(cnn_pre - cnn_post),
+    morphology_tda_embedding
+)
+```
+
+Recommended Phase 6 run:
+
+```powershell
+python src\week11\week11_train_classifier.py --dataset-root data\week11_buildings --results-dir results\week11_feature_fusion --epochs 25 --batch-size 32 --class-weight-mode effective --weighted-sampler --augment-train --max-train-per-class 5000 -1 -1 3091 --use-handcrafted-features
+```
+
+This should be compared directly against the strongest Week 11 baseline. The main question is whether morphology and topology improve minor-damage and major-damage precision without destroying recall.
+
+Full persistent homology remains the next extension after this first Gudhi-compatible implementation. Persistence landscapes and Betti curves from building masks and high-difference regions can be added to the same feature vector, making the comparison clean.
 
 ## Future Extensions
 
@@ -1441,6 +1555,5 @@ After the Week 11 object-level baseline, the next improvements should focus on m
 - Replace ground-truth object masks with predicted segmentation masks to test deployment realism.
 - Add disaster-type performance breakdowns for each final model.
 - Add confusion-matrix discussion for minor/major/destroyed mistakes.
-- Add morphology features from object masks.
-- Add TDA features such as persistence entropy, Betti curves, contour fragmentation, and hole counts.
-- Concatenate TDA vectors with CNN embeddings after the baseline is stable.
+- Compare the Phase 6 feature-fusion model against the Week 11 capped and augmented baseline.
+- Add full persistent-homology features such as persistence entropy, Betti curves, and persistence landscapes.

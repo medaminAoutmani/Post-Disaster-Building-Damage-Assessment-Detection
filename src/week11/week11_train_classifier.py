@@ -23,7 +23,8 @@ if str(CURRENT_DIR) not in sys.path:
     sys.path.insert(0, str(CURRENT_DIR))
 
 from week11_dataset import CLASS_NAMES, BuildingDamageDataset
-from week11_model import SiameseBuildingClassifier
+from week11_features import FEATURE_NAMES
+from week11_model import SiameseBuildingClassifier, SiameseBuildingFeatureClassifier
 
 
 def confusion_matrix(predictions: torch.Tensor, targets: torch.Tensor, num_classes: int) -> torch.Tensor:
@@ -102,25 +103,34 @@ def build_weighted_sampler(dataset: BuildingDamageDataset, counts: torch.Tensor)
     return WeightedRandomSampler(sample_weights, num_samples=len(sample_weights), replacement=True)
 
 
+def forward_batch(model: nn.Module, batch: dict, device: torch.device, use_features: bool) -> torch.Tensor:
+    """Run either the pure CNN baseline or CNN+handcrafted feature model."""
+    pre = batch["pre"].to(device)
+    post = batch["post"].to(device)
+    diff = batch["diff"].to(device)
+    if use_features:
+        features = batch["features"].to(device).float()
+        return model(pre, post, diff, features)
+    return model(pre, post, diff)
+
+
 def train_one_epoch(
     model: nn.Module,
     dataloader: DataLoader,
     optimizer: torch.optim.Optimizer,
     criterion: nn.Module,
     device: torch.device,
+    use_features: bool = False,
 ) -> tuple[float, dict[str, float], torch.Tensor]:
     """Train for one epoch."""
     model.train()
     total_loss = 0.0
     confusion = torch.zeros((len(CLASS_NAMES), len(CLASS_NAMES)), dtype=torch.long)
     for batch in dataloader:
-        pre = batch["pre"].to(device)
-        post = batch["post"].to(device)
-        diff = batch["diff"].to(device)
         labels = batch["label"].to(device).long()
 
         optimizer.zero_grad(set_to_none=True)
-        logits = model(pre, post, diff)
+        logits = forward_batch(model, batch, device, use_features)
         loss = criterion(logits, labels)
         loss.backward()
         optimizer.step()
@@ -137,17 +147,15 @@ def evaluate(
     dataloader: DataLoader,
     criterion: nn.Module,
     device: torch.device,
+    use_features: bool = False,
 ) -> tuple[float, dict[str, float], torch.Tensor]:
     """Evaluate the classifier."""
     model.eval()
     total_loss = 0.0
     confusion = torch.zeros((len(CLASS_NAMES), len(CLASS_NAMES)), dtype=torch.long)
     for batch in dataloader:
-        pre = batch["pre"].to(device)
-        post = batch["post"].to(device)
-        diff = batch["diff"].to(device)
         labels = batch["label"].to(device).long()
-        logits = model(pre, post, diff)
+        logits = forward_batch(model, batch, device, use_features)
         loss = criterion(logits, labels)
 
         total_loss += float(loss.item())
@@ -249,6 +257,11 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--augment-train", action="store_true", help="Apply lightweight flips, rotations, and color jitter to training crops.")
     parser.add_argument(
+        "--use-handcrafted-features",
+        action="store_true",
+        help="Fuse CNN embeddings with morphology, change, and lightweight TDA features.",
+    )
+    parser.add_argument(
         "--max-train-per-class",
         type=int,
         nargs=4,
@@ -268,8 +281,13 @@ def main() -> None:
     torch.manual_seed(args.seed)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    train_dataset = BuildingDamageDataset(args.dataset_root, "train", augment=args.augment_train)
-    val_dataset = BuildingDamageDataset(args.dataset_root, "val")
+    train_dataset = BuildingDamageDataset(
+        args.dataset_root,
+        "train",
+        augment=args.augment_train,
+        include_features=args.use_handcrafted_features,
+    )
+    val_dataset = BuildingDamageDataset(args.dataset_root, "val", include_features=args.use_handcrafted_features)
     if args.max_train_per_class is not None:
         caps = [None if value < 0 else value for value in args.max_train_per_class]
         cap_dataset_per_class(train_dataset, caps, args.seed)
@@ -285,7 +303,13 @@ def main() -> None:
     )
     val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
 
-    model = SiameseBuildingClassifier(pretrained=args.pretrained).to(device)
+    if args.use_handcrafted_features:
+        model = SiameseBuildingFeatureClassifier(
+            feature_dim=len(FEATURE_NAMES),
+            pretrained=args.pretrained,
+        ).to(device)
+    else:
+        model = SiameseBuildingClassifier(pretrained=args.pretrained).to(device)
     loss_weights = build_loss_weights(train_counts, args.class_weight_mode)
     criterion = nn.CrossEntropyLoss(weight=None if loss_weights is None else loss_weights.to(device))
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
@@ -299,9 +323,15 @@ def main() -> None:
 
     config = {
         "dataset_root": str(args.dataset_root),
-        "model": "SiameseBuildingClassifier",
+        "model": "SiameseBuildingFeatureClassifier" if args.use_handcrafted_features else "SiameseBuildingClassifier",
         "encoder": "ResNet18",
-        "fusion": "concat(pre, post, diff, abs(pre-post)) embeddings",
+        "fusion": (
+            "concat(pre, post, diff, abs(pre-post), handcrafted_features)"
+            if args.use_handcrafted_features
+            else "concat(pre, post, diff, abs(pre-post)) embeddings"
+        ),
+        "use_handcrafted_features": args.use_handcrafted_features,
+        "feature_names": FEATURE_NAMES if args.use_handcrafted_features else [],
         "loss": "CrossEntropyLoss",
         "class_weight_mode": args.class_weight_mode,
         "loss_weights": None if loss_weights is None else [float(value) for value in loss_weights.tolist()],
@@ -336,8 +366,21 @@ def main() -> None:
     )
 
     for epoch in range(1, args.epochs + 1):
-        train_loss, train_metrics, _ = train_one_epoch(model, train_loader, optimizer, criterion, device)
-        val_loss, val_metrics, val_confusion = evaluate(model, val_loader, criterion, device)
+        train_loss, train_metrics, _ = train_one_epoch(
+            model,
+            train_loader,
+            optimizer,
+            criterion,
+            device,
+            use_features=args.use_handcrafted_features,
+        )
+        val_loss, val_metrics, val_confusion = evaluate(
+            model,
+            val_loader,
+            criterion,
+            device,
+            use_features=args.use_handcrafted_features,
+        )
         print(
             f"epoch={epoch} train_loss={train_loss:.4f} val_loss={val_loss:.4f} "
             f"val_acc={val_metrics['accuracy']:.4f} val_macro_f1={val_metrics['macro_f1']:.4f} "
@@ -369,6 +412,8 @@ def main() -> None:
                     "epoch": epoch,
                     "val_metrics": val_metrics,
                     "class_names": CLASS_NAMES,
+                    "use_handcrafted_features": args.use_handcrafted_features,
+                    "feature_names": FEATURE_NAMES if args.use_handcrafted_features else [],
                 },
                 checkpoint_dir / "week11_siamese_resnet18_best.pt",
             )

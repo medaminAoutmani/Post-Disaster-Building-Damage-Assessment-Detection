@@ -18,7 +18,8 @@ if str(CURRENT_DIR) not in sys.path:
     sys.path.insert(0, str(CURRENT_DIR))
 
 from week11_dataset import CLASS_NAMES, BuildingDamageDataset
-from week11_model import SiameseBuildingClassifier
+from week11_features import FEATURE_NAMES
+from week11_model import SiameseBuildingClassifier, SiameseBuildingFeatureClassifier
 
 
 def denormalize(image: torch.Tensor) -> np.ndarray:
@@ -43,13 +44,22 @@ def main() -> None:
     parser.add_argument("--split", type=str, default="val")
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--max-examples", type=int, default=80)
+    parser.add_argument("--use-handcrafted-features", action="store_true", help="Load a CNN+feature checkpoint.")
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    dataset = BuildingDamageDataset(args.dataset_root, args.split)
+    dataset = BuildingDamageDataset(args.dataset_root, args.split, include_features=args.use_handcrafted_features)
     dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False, num_workers=0)
     checkpoint = torch.load(args.checkpoint, map_location=device)
-    model = SiameseBuildingClassifier(pretrained=False).to(device)
+    checkpoint_uses_features = bool(checkpoint.get("use_handcrafted_features", False))
+    use_features = args.use_handcrafted_features or checkpoint_uses_features
+    if use_features and not args.use_handcrafted_features:
+        dataset = BuildingDamageDataset(args.dataset_root, args.split, include_features=True)
+        dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False, num_workers=0)
+    if use_features:
+        model = SiameseBuildingFeatureClassifier(feature_dim=len(FEATURE_NAMES), pretrained=False).to(device)
+    else:
+        model = SiameseBuildingClassifier(pretrained=False).to(device)
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
 
@@ -58,7 +68,15 @@ def main() -> None:
     saved = 0
     with torch.no_grad():
         for batch in dataloader:
-            logits = model(batch["pre"].to(device), batch["post"].to(device), batch["diff"].to(device))
+            if use_features:
+                logits = model(
+                    batch["pre"].to(device),
+                    batch["post"].to(device),
+                    batch["diff"].to(device),
+                    batch["features"].to(device).float(),
+                )
+            else:
+                logits = model(batch["pre"].to(device), batch["post"].to(device), batch["diff"].to(device))
             probabilities = torch.softmax(logits.cpu(), dim=1)
             predictions = torch.argmax(probabilities, dim=1)
             labels = batch["label"]

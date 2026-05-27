@@ -10,6 +10,8 @@ import cv2
 import torch
 from torch.utils.data import Dataset
 
+from week11_features import extract_feature_vector
+
 
 CLASS_NAMES = ["no_damage", "minor_damage", "major_damage", "destroyed"]
 IMAGENET_MEAN = torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1)
@@ -57,11 +59,19 @@ def apply_train_augmentation(pre: torch.Tensor, post: torch.Tensor, diff: torch.
 class BuildingDamageDataset(Dataset):
     """Load object-level xBD building crops saved by week11_extract_buildings.py."""
 
-    def __init__(self, dataset_root: Path, split: str, normalize: bool = True, augment: bool = False) -> None:
+    def __init__(
+        self,
+        dataset_root: Path,
+        split: str,
+        normalize: bool = True,
+        augment: bool = False,
+        include_features: bool = False,
+    ) -> None:
         self.dataset_root = Path(dataset_root)
         self.split = split
         self.normalize = normalize
         self.augment = augment
+        self.include_features = include_features
         self.samples: list[dict[str, Path | int | str]] = []
 
         split_root = self.dataset_root / split
@@ -101,7 +111,7 @@ class BuildingDamageDataset(Dataset):
             pre = (pre - IMAGENET_MEAN) / IMAGENET_STD
             post = (post - IMAGENET_MEAN) / IMAGENET_STD
             diff = (diff - IMAGENET_MEAN) / IMAGENET_STD
-        return {
+        output = {
             "pre": pre,
             "post": post,
             "diff": diff,
@@ -112,3 +122,6 @@ class BuildingDamageDataset(Dataset):
             "disaster_type": str(metadata.get("disaster_type", "")),
             "metadata_path": str(sample_dir / "metadata.json"),
         }
+        if self.include_features:
+            output["features"] = torch.from_numpy(extract_feature_vector(sample_dir)).float()
+        return output
