@@ -98,6 +98,7 @@ def component_metadata(
     bbox: tuple[int, int, int, int],
     crop_bbox: tuple[int, int, int, int],
     polygon: list[list[int]],
+    source_dataset: str,
 ) -> dict:
     """Build metadata for one object-level building sample."""
     ys, xs = np.where(component_mask > 0)
@@ -117,6 +118,7 @@ def component_metadata(
         "crop_bbox": list(crop_bbox),
         "polygon": polygon,
         "source": "xbd_gt_polygon_connected_component",
+        "source_dataset": source_dataset,
     }
 
 
@@ -150,6 +152,8 @@ def extract_buildings_for_sample(
     crop_size: int,
     padding: int,
     min_area: int,
+    source_dataset: str = "base",
+    building_id_prefix: str = "",
 ) -> Counter:
     """Extract all valid building instances for one xBD image pair."""
     pre_path, post_path, label_path = image_pair_paths(data_dir, sample_id, data_split)
@@ -197,7 +201,8 @@ def extract_buildings_for_sample(
                 post_crop = resize_rgb(post_image[ymin:ymax, xmin:xmax], crop_size)
                 mask_crop = resize_mask(component_mask[ymin:ymax, xmin:xmax] * 255, crop_size)
                 polygon_points = polygon_array.reshape(-1, 2).astype(int).tolist()
-                building_id = f"{sample_id}_b{polygon_index:04d}_{part_index:02d}_{component_index:02d}"
+                id_sample = f"{building_id_prefix}{sample_id}" if building_id_prefix else sample_id
+                building_id = f"{id_sample}_b{polygon_index:04d}_{part_index:02d}_{component_index:02d}"
                 metadata = component_metadata(
                     sample_id,
                     building_id,
@@ -206,6 +211,7 @@ def extract_buildings_for_sample(
                     bbox,
                     crop_bbox,
                     polygon_points,
+                    source_dataset,
                 )
                 write_building_sample(
                     output_root,
@@ -223,6 +229,14 @@ def extract_buildings_for_sample(
     if not polygons:
         stats["no_valid_polygons"] += 1
     return stats
+
+
+def collect_extra_sample_ids(extra_data_dir: Path, split: str) -> list[str]:
+    """Find sample ids available in an extra xBD-style data directory."""
+    labels_dir = extra_data_dir / split / "labels"
+    if not labels_dir.exists():
+        return []
+    return sorted(path.stem.replace("_post_disaster", "") for path in labels_dir.glob("*_post_disaster.json"))
 
 
 def save_summary(summary: dict[str, Counter], output_root: Path) -> None:
@@ -249,6 +263,10 @@ def main() -> None:
     parser.add_argument("--padding", type=int, default=12)
     parser.add_argument("--min-area", type=int, default=32)
     parser.add_argument("--max-samples-per-split", type=int, default=None)
+    parser.add_argument("--extra-data-dir", type=Path, default=Path("data") / "week8_extra")
+    parser.add_argument("--extra-data-split", type=str, default="train")
+    parser.add_argument("--use-week8-extra", action="store_true", help="Append Week 8 extra samples to the train object dataset only.")
+    parser.add_argument("--max-extra-samples", type=int, default=None)
     args = parser.parse_args()
 
     summary: dict[str, Counter] = {}
@@ -269,10 +287,37 @@ def main() -> None:
                     args.crop_size,
                     args.padding,
                     args.min_area,
+                    source_dataset="base",
                 )
             )
             if index % 25 == 0:
                 print(f"{split_name}: processed {index}/{len(sample_ids)} samples written={split_stats['written']}")
+
+        if split_name == "train" and args.use_week8_extra:
+            extra_ids = collect_extra_sample_ids(args.extra_data_dir, args.extra_data_split)
+            if args.max_extra_samples is not None:
+                extra_ids = extra_ids[: args.max_extra_samples]
+            split_stats["week8_extra_scene_count"] = len(extra_ids)
+            for index, sample_id in enumerate(extra_ids, start=1):
+                split_stats.update(
+                    extract_buildings_for_sample(
+                        args.extra_data_dir,
+                        args.output_root,
+                        sample_id,
+                        split_name,
+                        args.extra_data_split,
+                        args.crop_size,
+                        args.padding,
+                        args.min_area,
+                        source_dataset="week8_extra",
+                        building_id_prefix="week8extra_",
+                    )
+                )
+                if index % 25 == 0:
+                    print(
+                        f"{split_name}: processed week8_extra {index}/{len(extra_ids)} "
+                        f"samples written={split_stats['written']}"
+                    )
         summary[split_name] = split_stats
         print(f"{split_name}: {dict(split_stats)}")
 
