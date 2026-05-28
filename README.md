@@ -2,7 +2,7 @@
 
 Satellite-image building segmentation and object-level damage classification project using the xBD disaster dataset.
 
-The project builds a preprocessing and training pipeline for paired pre-disaster and post-disaster satellite images. It starts with binary and multiclass segmentation, then transitions in Week 11 to building-level damage assessment.
+The project builds a preprocessing and training pipeline for paired pre-disaster and post-disaster satellite images. It starts with binary and multiclass segmentation, transitions in Week 11 to building-level damage assessment, and moves in Week 12 toward embedding-centric object-level damage representation learning.
 
 ## Structure
 
@@ -79,6 +79,14 @@ src/
     +-- week11_model.py
     +-- week11_train_classifier.py
     +-- week11_error_analysis.py
++-- week12/
+    +-- week12_model_backbones.py
+    +-- week12_train_backbone.py
+    +-- week12_eval_backbone.py
+    +-- week12_hierarchical_model.py
+    +-- week12_train_stage1.py
+    +-- week12_train_stage2.py
+    +-- week12_inference_pipeline.py
 splits/
 +-- train.txt
 +-- val.txt
@@ -110,6 +118,8 @@ The raw dataset is intentionally ignored by Git with `.gitignore`.
 - Week 8: rare-class imbalance audit and targeted data expansion, especially for minor damage
 - Week 9: multi-task Siamese damage segmentation with auxiliary building-mask supervision
 - Week 10: building-masked damage loss for rare-class learning on building pixels only
+- Week 11: object-level building extraction and Siamese damage classification
+- Week 12: advanced object-level representation learning with stronger backbones, metric learning, temporal fusion, embedding plots, and hierarchical classification
 
 See `PROJECT_REPORT.md` for the full project report.
 
@@ -584,6 +594,92 @@ results/week11/
 ```
 
 The most important metrics are macro F1, weighted F1, `recall_minor_damage`, and `recall_major_damage`.
+
+## Week 12 Advanced Object-Level Damage Representation Learning
+
+Week 12 keeps the Week 11 object crop dataset and changes the research question from segmentation optimization to semantic separability:
+
+```text
+How can the model learn better building-level embeddings for visually ambiguous damage classes?
+```
+
+The main bottleneck is now `minor_damage` vs `major_damage`, with `minor_damage` also overlapping visually with `no_damage`.
+
+### Phase 1: Stronger Backbones
+
+Train upgraded object-level backbones:
+
+```powershell
+python src\week12\week12_train_backbone.py --dataset-root data\week11_buildings --results-dir results\week12_resnet34 --backbone resnet34 --epochs 25 --batch-size 32 --class-weight-mode effective --weighted-sampler --augment-train --max-train-per-class 5000 -1 -1 3091
+```
+
+Other supported backbones:
+
+```text
+efficientnet_b0
+convnext_tiny
+```
+
+### Phase 2: Metric Learning
+
+ArcFace is the first metric-learning objective to test because it directly enforces angular class separation:
+
+```powershell
+python src\week12\week12_train_backbone.py --dataset-root data\week11_buildings --results-dir results\week12_arcface_resnet34 --backbone resnet34 --loss-type arcface --fusion concat --epochs 25 --batch-size 32 --weighted-sampler --augment-train --max-train-per-class 5000 -1 -1 3091
+```
+
+Supervised contrastive pretraining is also implemented:
+
+```powershell
+python src\week12\week12_train_backbone.py --dataset-root data\week11_buildings --results-dir results\week12_supcon_resnet34 --backbone resnet34 --loss-type supcon --epochs 25 --batch-size 32 --weighted-sampler --augment-train --max-train-per-class 5000 -1 -1 3091
+```
+
+Evaluate a checkpoint and export embedding plots:
+
+```powershell
+python src\week12\week12_eval_backbone.py --dataset-root data\week11_buildings --checkpoint results\week12_arcface_resnet34\checkpoints\week12_resnet34_concat_arcface_best.pt --output-dir results\week12_arcface_resnet34\eval
+```
+
+The evaluator always saves PCA plots. If `scikit-learn` or `umap-learn` is installed, it also saves t-SNE and UMAP plots.
+
+### Phase 3: Hierarchical Damage Classification
+
+The hierarchical classifier decomposes the four-way task into:
+
+```text
+Stage 1: no_damage vs damaged
+Stage 2: minor_damage vs major_damage vs destroyed
+```
+
+Stage 1 should prioritize damaged recall:
+
+```powershell
+python src\week12\week12_train_stage1.py --dataset-root data\week11_buildings --results-dir results\week12_hierarchical_stage1 --backbone resnet34 --fusion gated --epochs 20 --batch-size 32 --weighted-sampler --augment-train --damaged-weight 2.0
+```
+
+Train Stage 2 only on damaged buildings:
+
+```powershell
+python src\week12\week12_train_stage2.py --dataset-root data\week11_buildings --results-dir results\week12_hierarchical_stage2 --backbone resnet34 --fusion gated --epochs 25 --batch-size 32 --weighted-sampler --augment-train
+```
+
+Run the complete hierarchy:
+
+```powershell
+python src\week12\week12_inference_pipeline.py --dataset-root data\week11_buildings --stage1-checkpoint results\week12_hierarchical_stage1\checkpoints\week12_stage1_best.pt --stage2-checkpoint results\week12_hierarchical_stage2\checkpoints\week12_stage2_best.pt --damaged-threshold 0.35 --output-dir results\week12_hierarchical_pipeline
+```
+
+### Phase 4: Temporal Attention Fusion
+
+Week 12 supports three object-level fusion modes:
+
+```text
+concat
+gated
+cross_attention
+```
+
+Gated fusion learns how much the post-disaster embedding should overwrite the pre-disaster embedding. Cross-attention lets pre, post, diff, and absolute-change embeddings interact before classification.
 
 By default, experiment artifacts are saved under:
 

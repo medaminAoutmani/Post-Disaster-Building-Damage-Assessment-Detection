@@ -11,9 +11,9 @@ The dataset contains:
 - JSON label files containing building polygons
 - Damage labels such as `no-damage`, `minor-damage`, `major-damage`, `destroyed`, and `un-classified`
 
-The project begins with binary building segmentation, where the model learns whether each pixel belongs to a labeled building or background. It then extends the same pipeline into multiclass damage segmentation, temporal Siamese modeling, class-imbalance handling, and multi-task learning. In the early models, the pre-disaster and post-disaster images are stacked together as a 6-channel input. In the later Siamese models, the two images are processed as separate RGB streams and fused at the feature level. Week 11 transitions from dense pixel-level segmentation to object-level building damage classification.
+The project begins with binary building segmentation, where the model learns whether each pixel belongs to a labeled building or background. It then extends the same pipeline into multiclass damage segmentation, temporal Siamese modeling, class-imbalance handling, and multi-task learning. In the early models, the pre-disaster and post-disaster images are stacked together as a 6-channel input. In the later Siamese models, the two images are processed as separate RGB streams and fused at the feature level. Week 11 transitions from dense pixel-level segmentation to object-level building damage classification. Week 12 extends that transition into embedding-centric building-level representation learning.
 
-The current pipeline is divided into eleven development stages:
+The current pipeline is divided into twelve development stages:
 
 1. Week 1: Data exploration, preprocessing, visualization, and mask generation
 2. Week 2: Dataset pipeline, train/validation/test splits, and the first baseline U-Net
@@ -26,6 +26,7 @@ The current pipeline is divided into eleven development stages:
 9. Week 9: Multi-task Siamese segmentation with auxiliary pre-disaster and post-disaster building supervision
 10. Week 10: Building-aware damage losses that focus optimization on meaningful damage pixels
 11. Week 11: Object-level building extraction and Siamese building damage classification
+12. Week 12: Advanced object-level representation learning for semantic damage separability
 
 ## Week 1: Preprocessing and Data Understanding
 
@@ -1542,18 +1543,212 @@ Recommended Phase 6 run:
 python src\week11\week11_train_classifier.py --dataset-root data\week11_buildings --results-dir results\week11_feature_fusion --epochs 25 --batch-size 32 --class-weight-mode effective --weighted-sampler --augment-train --max-train-per-class 5000 -1 -1 3091 --use-handcrafted-features
 ```
 
-This should be compared directly against the strongest Week 11 baseline. The main question is whether morphology and topology improve minor-damage and major-damage precision without destroying recall.
+The Phase 6 run included morphology, change, topology-inspired features, and Gudhi cubical-complex persistent-homology summaries. The best validation checkpoint was epoch 7:
 
-Full persistent homology remains the next extension after this first Gudhi-compatible implementation. Persistence landscapes and Betti curves from building masks and high-difference regions can be added to the same feature vector, making the comparison clean.
+| Metric | CNN capped augmented baseline | Morphology + TDA feature fusion |
+|---|---:|---:|
+| accuracy | 0.9431 | 0.5507 |
+| macro F1 | 0.5067 | 0.4033 |
+| weighted F1 | 0.9524 | 0.6878 |
+| no_damage F1 | 0.9703 | 0.6796 |
+| minor_damage precision | 0.0186 | 0.0078 |
+| minor_damage recall | 0.0441 | 0.5588 |
+| minor_damage F1 | 0.0262 | 0.0154 |
+| major_damage precision | 0.0955 | 0.0540 |
+| major_damage recall | 0.4286 | 0.5102 |
+| major_damage F1 | 0.1561 | 0.0977 |
+| destroyed F1 | 0.8743 | 0.8207 |
+
+The morphology and persistent-homology feature-fusion experiment did not outperform the Siamese CNN baseline. It increased minority-class recall, especially for minor damage, but it also caused severe minority overprediction. The validation set contained only 68 minor-damage buildings, but the feature-fusion model predicted 4880 buildings as minor damage. This produced a minor-damage precision of only 0.0078. The same pattern appeared for major damage: recall improved slightly, but precision remained low because the model predicted 463 major-damage buildings for only 49 true examples.
+
+This means the feature-fusion model learned a broad structural-change signal, but it did not learn reliable damage-severity discrimination. Persistent-homology and morphology features made the classifier more sensitive to possible damage, but not more precise about whether a building was no-damage, minor-damage, major-damage, or destroyed.
+
+### Final Week 11 Conclusion
+
+The final Week 11 baseline is the capped and augmented Siamese ResNet18 classifier:
+
+```text
+results/week11_capped_augmented
+```
+
+This model is the strongest overall object-level system because it preserves high no-damage and destroyed performance while beginning to recover major-damage buildings. Aggressive inverse weighting and morphology + TDA feature fusion both increased minority recall, but they did so by overpredicting minority classes and reducing precision, accuracy, and weighted F1.
+
+The main Week 11 conclusion is that object-level classification is a better research direction than dense pixel-level damage segmentation for this project, but the key remaining bottleneck is minor-damage separability. Minor damage is rare, visually subtle, and close to both no-damage and major-damage cases. The next research work should therefore focus on data quality, label ambiguity, calibrated feature fusion, and targeted error analysis rather than simply adding stronger class weights or more complex features.
+
+## Week 12: Advanced Object-Level Damage Representation Learning
+
+Week 12 changes the project goal from segmentation optimization to embedding-centric object-level damage understanding. The Week 11 object crop dataset remains the input, but the scientific target is now the geometry of the learned building representation.
+
+The core Week 12 question is:
+
+```text
+How can the model improve semantic separability between visually ambiguous
+building-level damage classes?
+```
+
+The most important ambiguity is:
+
+```text
+minor_damage vs major_damage
+```
+
+Minor damage is also frequently confused with no damage because it can appear as subtle roof texture change, small debris, or weak structural cues. This means the remaining failure is not mainly a localization problem. It is an embedding-overlap, class-definition, and data-distribution problem.
+
+### Week 12 Phase 1: Stronger CNN Backbones
+
+The Week 11 classifier uses a shared ResNet18 encoder. Week 12 introduces stronger encoders while preserving the same object-level training protocol:
+
+```text
+src/week12/week12_model_backbones.py
+src/week12/week12_train_backbone.py
+src/week12/week12_eval_backbone.py
+```
+
+Supported backbones:
+
+```text
+resnet18
+resnet34
+efficientnet_b0
+convnext_tiny
+```
+
+The recommended experimental order is:
+
+```text
+12A-1: ResNet34
+12A-2: EfficientNet-B0
+12A-3: ConvNeXt-Tiny
+```
+
+ResNet34 is the safest upgrade because it adds depth and texture capacity with minimal disruption. EfficientNet-B0 is expected to help subtle local roof patterns, which may improve minor-damage precision. ConvNeXt-Tiny is the strongest long-term representation candidate because it provides modern spatial features, but it is slower and may need more tuning.
+
+Example ResNet34 run:
+
+```text
+python src/week12/week12_train_backbone.py --dataset-root data/week11_buildings --results-dir results/week12_resnet34 --backbone resnet34 --epochs 25 --batch-size 32 --class-weight-mode effective --weighted-sampler --augment-train --max-train-per-class 5000 -1 -1 3091
+```
+
+### Week 12 Phase 2: Embedding and Metric Learning
+
+Cross-entropy learns a decision boundary, but it does not explicitly enforce compact within-class clusters or large between-class distances. This is a poor match for the Week 11 failure mode, where minor-damage embeddings overlap with no-damage and major-damage examples.
+
+Week 12 therefore adds metric-learning objectives:
+
+```text
+ArcFace
+Supervised contrastive learning
+```
+
+ArcFace is the first recommended metric-learning experiment because it adds an angular margin between classes. This should encourage stronger separation among minor, major, and destroyed buildings:
+
+```text
+python src/week12/week12_train_backbone.py --dataset-root data/week11_buildings --results-dir results/week12_arcface_resnet34 --backbone resnet34 --loss-type arcface --fusion concat --epochs 25 --batch-size 32 --weighted-sampler --augment-train --max-train-per-class 5000 -1 -1 3091
+```
+
+Supervised contrastive learning is implemented as an embedding pretraining option:
+
+```text
+python src/week12/week12_train_backbone.py --dataset-root data/week11_buildings --results-dir results/week12_supcon_resnet34 --backbone resnet34 --loss-type supcon --epochs 25 --batch-size 32 --weighted-sampler --augment-train --max-train-per-class 5000 -1 -1 3091
+```
+
+Embedding visualization is a required Week 12 analysis artifact. The evaluator exports raw embeddings and projection plots:
+
+```text
+python src/week12/week12_eval_backbone.py --dataset-root data/week11_buildings --checkpoint results/week12_arcface_resnet34/checkpoints/week12_resnet34_concat_arcface_best.pt --output-dir results/week12_arcface_resnet34/eval
+```
+
+The evaluator always saves PCA plots. If optional packages are installed, it also saves t-SNE and UMAP plots. These plots should show whether minor and major damage form separable clusters or remain mixed.
+
+### Week 12 Phase 3: Hierarchical Damage Classification
+
+The xBD labels are naturally hierarchical:
+
+```text
+Stage 1: no_damage vs damaged
+Stage 2: minor_damage vs major_damage vs destroyed
+```
+
+Week 12 implements this decomposition in:
+
+```text
+src/week12/week12_hierarchical_model.py
+src/week12/week12_train_stage1.py
+src/week12/week12_train_stage2.py
+src/week12/week12_inference_pipeline.py
+```
+
+The motivation is that the direct four-way classifier forces minor damage to compete against the extremely dominant no-damage class. The hierarchical design removes that interference in Stage 2 and lets the damaged classifier focus only on damage severity.
+
+Stage 1 should prioritize high damaged recall:
+
+```text
+python src/week12/week12_train_stage1.py --dataset-root data/week11_buildings --results-dir results/week12_hierarchical_stage1 --backbone resnet34 --fusion gated --epochs 20 --batch-size 32 --weighted-sampler --augment-train --damaged-weight 2.0
+```
+
+Stage 2 trains only on damaged buildings:
+
+```text
+python src/week12/week12_train_stage2.py --dataset-root data/week11_buildings --results-dir results/week12_hierarchical_stage2 --backbone resnet34 --fusion gated --epochs 25 --batch-size 32 --weighted-sampler --augment-train
+```
+
+The full inference pipeline combines both stages with a tunable damaged threshold:
+
+```text
+python src/week12/week12_inference_pipeline.py --dataset-root data/week11_buildings --stage1-checkpoint results/week12_hierarchical_stage1/checkpoints/week12_stage1_best.pt --stage2-checkpoint results/week12_hierarchical_stage2/checkpoints/week12_stage2_best.pt --damaged-threshold 0.35 --output-dir results/week12_hierarchical_pipeline
+```
+
+Lowering the damaged threshold prioritizes recall, which is appropriate because missing a damaged building is more costly than sending a borderline building to Stage 2.
+
+### Week 12 Phase 4: Temporal Attention Fusion
+
+Week 11 uses shallow feature concatenation:
+
+```text
+concat(pre, post, diff, abs(pre - post))
+```
+
+Week 12 adds two learned fusion alternatives:
+
+```text
+gated
+cross_attention
+```
+
+Gated fusion learns how much the post-disaster embedding should replace the pre-disaster embedding. Cross-attention allows the pre, post, difference, and absolute-change embeddings to interact before classification. This is more aligned with the object-level problem because the model can learn where and how change matters rather than relying only on static concatenation.
+
+### Week 12 Expected Evaluation
+
+Week 12 should be compared against the strongest Week 11 baseline:
+
+```text
+results/week11_capped_augmented
+```
+
+The most important metrics are:
+
+```text
+macro F1
+minor_damage precision
+minor_damage recall
+minor_damage F1
+major_damage precision
+major_damage recall
+major_damage F1
+destroyed F1
+predicted_minor_damage
+predicted_major_damage
+```
+
+The expected scientific outcome is not only a higher score, but a clearer explanation of whether stronger representations reduce the overlap between minor and major damage embeddings.
 
 ## Future Extensions
 
-After the Week 11 object-level baseline, the next improvements should focus on making damage severity prediction more reliable:
+After the Week 12 object-level representation experiments, the next improvements should focus on making damage severity prediction more reliable:
 
-- Run the full Week 11 crop extraction and train the ResNet18 Siamese baseline.
-- Compare 64x64 and 96x96 object crops.
 - Replace ground-truth object masks with predicted segmentation masks to test deployment realism.
 - Add disaster-type performance breakdowns for each final model.
-- Add confusion-matrix discussion for minor/major/destroyed mistakes.
-- Compare the Phase 6 feature-fusion model against the Week 11 capped and augmented baseline.
-- Add full persistent-homology features such as persistence entropy, Betti curves, and persistence landscapes.
+- Use embedding plots to identify whether minor/major errors are separability failures or label-quality failures.
+- Calibrate hierarchical Stage 1 thresholds for high damaged recall.
+- Investigate minor-damage label quality and visual ambiguity through crop-level error analysis.
+- Add richer persistent-homology summaries only if embedding-centric models still leave structured minority-class errors.
