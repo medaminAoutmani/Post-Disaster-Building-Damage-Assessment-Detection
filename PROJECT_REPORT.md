@@ -11,7 +11,7 @@ The dataset contains:
 - JSON label files containing building polygons
 - Damage labels such as `no-damage`, `minor-damage`, `major-damage`, `destroyed`, and `un-classified`
 
-The project begins with binary building segmentation, where the model learns whether each pixel belongs to a labeled building or background. It then extends the same pipeline into multiclass damage segmentation, temporal Siamese modeling, class-imbalance handling, and multi-task learning. In the early models, the pre-disaster and post-disaster images are stacked together as a 6-channel input. In the later Siamese models, the two images are processed as separate RGB streams and fused at the feature level. Week 11 transitions from dense pixel-level segmentation to object-level building damage classification. Week 12 extends that transition into embedding-centric building-level representation learning. Week 13 adds calibration-aware ordinal learning to improve semantic decision boundaries for subtle damage.
+The project begins with binary building segmentation, where the model learns whether each pixel belongs to a labeled building or background. It then extends the same pipeline into multiclass damage segmentation, temporal Siamese modeling, class-imbalance handling, and multi-task learning. In the early models, the pre-disaster and post-disaster images are stacked together as a 6-channel input. In the later Siamese models, the two images are processed as separate RGB streams and fused at the feature level. Week 11 transitions from dense pixel-level segmentation to object-level building damage classification. Week 12 extends that transition into embedding-centric building-level representation learning. Week 13 adds a topology-guided verifier for the specific semantic ambiguity between `no_damage` and `minor_damage`.
 
 The current pipeline is divided into thirteen development stages:
 
@@ -27,7 +27,7 @@ The current pipeline is divided into thirteen development stages:
 10. Week 10: Building-aware damage losses that focus optimization on meaningful damage pixels
 11. Week 11: Object-level building extraction and Siamese building damage classification
 12. Week 12: Advanced object-level representation learning for semantic damage separability
-13. Week 13: Calibration-aware ordinal semantic damage learning
+13. Week 13: Topology-guided semantic calibration for no-damage/minor-damage ambiguity
 
 ## Week 1: Preprocessing and Data Understanding
 
@@ -2306,163 +2306,217 @@ challenge is calibrated semantic separation under class imbalance and label
 ambiguity, especially for minor damage.
 ```
 
-## Week 13: Calibration-Aware Ordinal Semantic Damage Learning
+## Week 13: Topology-Guided Semantic Calibration
 
-Week 13 builds directly on the strongest Week 12 conclusion: the remaining bottleneck is no longer mainly segmentation quality or raw feature capacity. The hierarchy experiment showed that `minor_damage`, `major_damage`, and `destroyed` can be separated when `no_damage` is removed from the decision space. The central problem is calibrated semantic separation under class imbalance and label ambiguity.
+Week 13 changes direction from training another classifier to adding a narrow verifier for the project’s clearest semantic ambiguity:
+
+```text
+no_damage <-> minor_damage
+```
+
+This is intentional. Earlier experiments showed that handcrafted topology and morphology are not strong enough to solve the full four-way xBD damage task. Week 13 therefore does not ask TDA to classify every damage class. Instead, it uses topology only where it is scientifically plausible to help: ambiguous CNN decisions between visually intact buildings and subtly damaged buildings.
 
 The Week 13 objective is:
 
 ```text
-Improve subtle-damage discrimination and decision calibration without causing minority flooding.
+Use topology as a post-hoc verifier for no_damage/minor_damage CNN mistakes,
+then measure whether it improves minor_damage precision, recall, and F1.
 ```
 
-Week 13 therefore focuses on three research questions:
-
-1. Can ordinal-aware learning improve `minor_damage` and `major_damage` separation?
-2. Can calibration reduce false damaged predictions without suppressing damaged recall?
-3. Can multi-task supervision stabilize damage-presence and damage-severity decisions?
-
-### Week 13 Phase 1: Ordinal Damage Learning
-
-xBD damage labels are ordered:
+The baseline remains:
 
 ```text
-no_damage < minor_damage < major_damage < destroyed
+ConvNeXt-Tiny + gated fusion
 ```
 
-Plain four-way cross-entropy treats all wrong classes as equally distant, which is not ideal. Week 13 implements ordinal alternatives in:
+The Week 13 hybrid model is:
 
 ```text
-src/week13/week13_losses.py
-src/week13/week13_train_calibrated.py
+ConvNeXt-Tiny + gated fusion -> TDA verifier -> corrected prediction
 ```
 
-The supported Week 13 training objectives are:
+### Week 13 Phase 1: Error Region Isolation
+
+The first phase isolates the only error region that Week 13 is allowed to correct:
 
 ```text
-ce
-label_smoothing
-emd
-coral
-regression
-multitask
+true no_damage predicted minor_damage
+true minor_damage predicted no_damage
 ```
 
-The recommended first Week 13 experiment starts from the Week 12 scientific model, ConvNeXt-Tiny with gated fusion:
+This is implemented in:
+
+```text
+src/week13/week13_error_isolation.py
+```
+
+Example:
 
 ```powershell
-python src\week13\week13_train_calibrated.py --dataset-root data\week11_buildings_week8_extra --results-dir results\week13_coral_convnext_gated --backbone convnext_tiny --fusion gated --loss-type coral --epochs 25 --batch-size 32 --class-weight-mode effective --augment-train
+python src\week13\week13_error_isolation.py --dataset-root data\week11_buildings_week8_extra --checkpoint results\week12\week12_convnext_tiny_gated_effective_no_sampler\checkpoints\week12_convnext_tiny_gated_ce_best.pt --split val --output-csv results\week13_topology\error_regions.csv
 ```
 
-CORAL predicts the ordered binary questions:
+The output CSV records:
 
 ```text
-damage >= minor_damage?
-damage >= major_damage?
-damage >= destroyed?
+metadata_path
+sample_dir
+true label
+CNN prediction
+p_no_damage
+p_minor_damage
+whether the row is a target-pair error
 ```
 
-This makes the model learn severity as an ordered progression instead of four unrelated categories.
+This phase keeps the experiment honest: Week 13 is not a broad TDA classifier. It is a correction module for one known semantic failure mode.
 
-Earth Mover Distance loss is also implemented:
+### Week 13 Phase 2: Persistent-Homology-Inspired Topology Pipeline
+
+Topology signatures are extracted in:
+
+```text
+src/week13/week13_topology_features.py
+```
+
+For each object crop, Week 13 builds topology summaries from:
+
+```text
+building mask
+edge map
+difference mask
+```
+
+If a saved building mask exists in the crop directory, it is used. Otherwise, the script estimates a building mask from the post-disaster crop using Otsu thresholding. Edge maps are generated with Canny edges, and difference masks are generated from the saved `diff.png` crop.
+
+The topology pipeline exports:
+
+```text
+Betti-0 curves
+Betti-1 curves
+persistence-style diagrams from Betti curve changes
+Wasserstein distances between edge and difference diagrams
+bottleneck distances between edge and difference diagrams
+area and ratio summaries
+```
+
+The implementation is intentionally lightweight and dependency-minimal. It uses OpenCV connected components and hole counting as a practical image-filtration proxy for persistent homology, avoiding a hard dependency on specialized TDA libraries.
+
+Generate topology features with:
 
 ```powershell
-python src\week13\week13_train_calibrated.py --dataset-root data\week11_buildings_week8_extra --results-dir results\week13_emd_convnext_gated --backbone convnext_tiny --fusion gated --loss-type emd --epochs 25 --batch-size 32 --class-weight-mode effective --augment-train
+python src\week13\week13_fit_topology_threshold.py --dataset-root data\week11_buildings_week8_extra --split val --topology-csv results\week13_topology\topology_features.csv --output-dir results\week13_topology\threshold
 ```
 
-EMD is distance-aware, so predicting `major_damage` for a true `minor_damage` crop is penalized less than predicting `destroyed`.
+### Week 13 Phase 3: Topology Threshold Calibration
 
-### Week 13 Phase 2: Calibration Learning
-
-Week 13 adds post-training calibration in:
+The calibration phase learns a single scalar decision rule:
 
 ```text
-src/week13/week13_calibrate.py
+topology_distance_threshold
 ```
 
-The calibration script supports:
+The score is:
 
-- temperature scaling
-- classwise threshold search
-- Expected Calibration Error
-- reliability diagrams
-- ordinal severity distance
-- damaged-vs-no-damage AUROC
+```text
+distance_to_no_damage_topology_prototype - distance_to_minor_damage_topology_prototype
+```
 
-Example calibration run:
+Interpretation:
+
+```text
+higher score -> topology is closer to minor_damage
+lower score  -> topology is closer to no_damage
+```
+
+The threshold is selected to best separate true `no_damage` from true `minor_damage` on the calibration split. The fitted configuration is saved as:
+
+```text
+results/week13_topology/threshold/topology_threshold.json
+```
+
+This file contains:
+
+```text
+feature names
+normalization statistics
+no_damage topology prototype
+minor_damage topology prototype
+topology_distance_threshold
+precision / recall / F1 for no-vs-minor topology separation
+```
+
+### Week 13 Phase 4: Hybrid CNN + TDA Correction
+
+The final Week 13 pipeline applies a constrained correction rule:
+
+```text
+1. Run the ConvNeXt-Tiny gated CNN.
+2. If the CNN prediction is no_damage or minor_damage, check whether the prediction is ambiguous.
+3. Extract topology features for that crop.
+4. Apply the topology_distance_threshold.
+5. Correct only between no_damage and minor_damage.
+6. Leave major_damage and destroyed untouched.
+```
+
+This is implemented in:
+
+```text
+src/week13/week13_hybrid_correction.py
+```
+
+Example:
 
 ```powershell
-python src\week13\week13_calibrate.py --dataset-root data\week11_buildings_week8_extra --checkpoint results\week13_coral_convnext_gated\checkpoints\week13_convnext_tiny_gated_coral_best.pt --output-dir results\week13_coral_convnext_gated\calibration
+python src\week13\week13_hybrid_correction.py --dataset-root data\week11_buildings_week8_extra --checkpoint results\week12\week12_convnext_tiny_gated_effective_no_sampler\checkpoints\week12_convnext_tiny_gated_ce_best.pt --threshold-json results\week13_topology\threshold\topology_threshold.json --split val --output-dir results\week13_topology\hybrid --ambiguity-margin 0.20
 ```
 
-The key comparison is:
+The `--ambiguity-margin` controls how close `p_no_damage` and `p_minor_damage` must be before TDA is allowed to intervene. This prevents topology from overriding confident CNN predictions.
+
+### Week 13 Phase 5: Scientific Evaluation
+
+Week 13 compares:
 
 ```text
-argmax predictions vs calibrated classwise-threshold predictions
+Baseline:
+ConvNeXt-Tiny gated
+
+Hybrid:
+ConvNeXt-Tiny gated + TDA correction
 ```
 
-The calibration goal is not simply to increase recall. The goal is to improve `minor_damage` and `major_damage` behavior while monitoring whether predicted minority counts become unrealistic.
-
-### Week 13 Phase 3: Label Smoothing and Multi-Task Learning
-
-Label smoothing is implemented as a calibration-aware cross-entropy baseline:
-
-```powershell
-python src\week13\week13_train_calibrated.py --dataset-root data\week11_buildings_week8_extra --results-dir results\week13_label_smoothing_convnext_gated --backbone convnext_tiny --fusion gated --loss-type label_smoothing --label-smoothing 0.08 --epochs 25 --batch-size 32 --class-weight-mode effective --augment-train
-```
-
-Week 13 also implements a multi-task model with three heads:
+The primary metrics are:
 
 ```text
-Head 1: four-way damage class
-Head 2: damaged vs no_damage presence
-Head 3: continuous severity score from 0 to 3
-```
-
-Run it with:
-
-```powershell
-python src\week13\week13_train_calibrated.py --dataset-root data\week11_buildings_week8_extra --results-dir results\week13_multitask_convnext_gated --backbone convnext_tiny --fusion gated --loss-type multitask --epochs 25 --batch-size 32 --class-weight-mode effective --augment-train
-```
-
-This phase directly tests the Week 12 hierarchy finding. Instead of forcing one classifier to learn damage existence and severity at the same time, the model receives auxiliary supervision for both concepts.
-
-### Week 13 Phase 4: Diagnostics
-
-Week 13 expands evaluation beyond macro F1. Each training run reports:
-
-```text
-macro F1
+minor_damage precision
+minor_damage recall
 minor_damage F1
-major_damage F1
-Expected Calibration Error
-mean ordinal severity distance
-damaged AUROC
+predicted_minor_damage count
+no_damage false positives
+minor_damage false negatives
 ```
 
-The calibration script saves:
+The hybrid script saves:
 
 ```text
-metrics/calibration_metrics.json
-metrics/classwise_thresholds.csv
-confusion_matrices/argmax_confusion_matrix.csv
-confusion_matrices/threshold_confusion_matrix.csv
-visualizations/reliability_diagram.png
+metrics/hybrid_metrics.json
+confusion_matrices/baseline_confusion_matrix.csv
+confusion_matrices/hybrid_confusion_matrix.csv
+confusion_matrices/hybrid_confusion_matrix.png
+corrections.csv
 ```
 
-These artifacts are important because Week 13 is measuring whether the model becomes more trustworthy, not only whether the top-line F1 changes.
+The most important scientific success condition is not just a higher minor recall. A good Week 13 result should improve `minor_damage` F1 without flooding the validation set with minor predictions.
 
-### Week 13 Expected Scientific Outcome
+### Week 13 Scientific Hypothesis
 
-Week 13 should be judged by whether it reduces the gap between the strong Week 12 Stage 2 diagnostic result and the weaker full four-way classifier. The strongest positive result would be:
+The Week 13 hypothesis is:
 
-- improved `minor_damage` F1 over the Week 12 gated ConvNeXt result of `0.1250`
-- stable or improved `major_damage` F1
-- lower ECE after calibration
-- realistic predicted counts for minor and major damage
-- lower mean severity distance
+```text
+CNN representations are best for broad semantic damage recognition,
+but topology can act as a targeted verifier for subtle no_damage/minor_damage ambiguity.
+```
 
-The most likely useful conclusion is that xBD object-level damage assessment needs both representation quality and calibrated ordinal decision rules. Week 12 established the representation direction; Week 13 tests whether ordered labels, threshold calibration, and auxiliary damage-presence supervision can convert that representation into more reliable subtle-damage predictions.
+This is a much narrower and stronger TDA claim than earlier handcrafted-feature experiments. Week 13 does not claim that topology solves xBD damage classification. It tests whether topology can improve the one region where semantic ambiguity is highest and where minor-damage performance matters most.
 
 ## Future Extensions
 
@@ -2473,4 +2527,4 @@ After Week 13, the next improvements should focus on deployment realism and rich
 - Use embedding plots to identify whether minor/major errors are separability failures or label-quality failures.
 - Investigate minor-damage label quality and visual ambiguity through crop-level error analysis.
 - Add larger contextual crops, adaptive crop scaling, or oriented bounding boxes for subtle damage cues near building boundaries.
-- Explore patch-level temporal transformers only after calibration-aware ordinal baselines are measured.
+- Explore patch-level temporal transformers only after the topology verifier has been compared against the gated ConvNeXt baseline.

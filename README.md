@@ -2,7 +2,7 @@
 
 Satellite-image building segmentation and object-level damage classification project using the xBD disaster dataset.
 
-The project builds a preprocessing and training pipeline for paired pre-disaster and post-disaster satellite images. It starts with binary and multiclass segmentation, transitions in Week 11 to building-level damage assessment, moves in Week 12 toward embedding-centric object-level damage representation learning, and adds Week 13 calibration-aware ordinal semantic damage learning.
+The project builds a preprocessing and training pipeline for paired pre-disaster and post-disaster satellite images. It starts with binary and multiclass segmentation, transitions in Week 11 to building-level damage assessment, moves in Week 12 toward embedding-centric object-level damage representation learning, and adds Week 13 topology-guided semantic calibration for no-damage/minor-damage ambiguity.
 
 ## Structure
 
@@ -120,7 +120,7 @@ The raw dataset is intentionally ignored by Git with `.gitignore`.
 - Week 10: building-masked damage loss for rare-class learning on building pixels only
 - Week 11: object-level building extraction and Siamese damage classification
 - Week 12: advanced object-level representation learning with stronger backbones, metric learning, temporal fusion, embedding plots, and hierarchical classification
-- Week 13: calibration-aware ordinal learning with CORAL, EMD, label smoothing, multi-task heads, temperature scaling, classwise thresholds, and reliability diagnostics
+- Week 13: topology-guided semantic calibration with error isolation, Betti-curve signatures, topology thresholding, and a constrained no-damage/minor-damage TDA correction
 
 See `PROJECT_REPORT.md` for the full project report.
 
@@ -682,58 +682,35 @@ cross_attention
 
 Gated fusion learns how much the post-disaster embedding should overwrite the pre-disaster embedding. Cross-attention lets pre, post, diff, and absolute-change embeddings interact before classification.
 
-## Week 13 Calibration-Aware Ordinal Semantic Damage Learning
+## Week 13 Topology-Guided Semantic Calibration
 
-Week 13 uses the Week 12 finding that the main bottleneck is calibrated semantic separation, especially `no_damage` vs subtle damage and `minor_damage` vs `major_damage`.
-
-The main Week 13 training script is:
+Week 13 no longer trains another full damage classifier. It adds a targeted TDA verifier for the clearest semantic ambiguity:
 
 ```text
-src/week13/week13_train_calibrated.py
+no_damage <-> minor_damage
 ```
 
-Supported objectives:
-
-```text
-ce
-label_smoothing
-emd
-coral
-regression
-multitask
-```
-
-Recommended first run:
+Phase 1 isolates CNN mistakes:
 
 ```powershell
-python src\week13\week13_train_calibrated.py --dataset-root data\week11_buildings_week8_extra --results-dir results\week13_coral_convnext_gated --backbone convnext_tiny --fusion gated --loss-type coral --epochs 25 --batch-size 32 --class-weight-mode effective --augment-train
+python src\week13\week13_error_isolation.py --dataset-root data\week11_buildings_week8_extra --checkpoint results\week12\week12_convnext_tiny_gated_effective_no_sampler\checkpoints\week12_convnext_tiny_gated_ce_best.pt --split val --output-csv results\week13_topology\error_regions.csv
 ```
 
-Distance-aware EMD run:
+Phase 2 and 3 extract topology features and fit the no/minor threshold:
 
 ```powershell
-python src\week13\week13_train_calibrated.py --dataset-root data\week11_buildings_week8_extra --results-dir results\week13_emd_convnext_gated --backbone convnext_tiny --fusion gated --loss-type emd --epochs 25 --batch-size 32 --class-weight-mode effective --augment-train
+python src\week13\week13_fit_topology_threshold.py --dataset-root data\week11_buildings_week8_extra --split val --topology-csv results\week13_topology\topology_features.csv --output-dir results\week13_topology\threshold
 ```
 
-Multi-task run with class, damaged-presence, and severity-regression heads:
+The topology pipeline uses building masks when available, otherwise it estimates them from the post-disaster crop. It also builds edge maps and difference masks, then exports Betti-curve summaries plus Wasserstein and bottleneck distances.
+
+Phase 4 applies the constrained hybrid correction:
 
 ```powershell
-python src\week13\week13_train_calibrated.py --dataset-root data\week11_buildings_week8_extra --results-dir results\week13_multitask_convnext_gated --backbone convnext_tiny --fusion gated --loss-type multitask --epochs 25 --batch-size 32 --class-weight-mode effective --augment-train
+python src\week13\week13_hybrid_correction.py --dataset-root data\week11_buildings_week8_extra --checkpoint results\week12\week12_convnext_tiny_gated_effective_no_sampler\checkpoints\week12_convnext_tiny_gated_ce_best.pt --threshold-json results\week13_topology\threshold\topology_threshold.json --split val --output-dir results\week13_topology\hybrid --ambiguity-margin 0.20
 ```
 
-Post-training calibration is implemented in:
-
-```text
-src/week13/week13_calibrate.py
-```
-
-Example:
-
-```powershell
-python src\week13\week13_calibrate.py --dataset-root data\week11_buildings_week8_extra --checkpoint results\week13_coral_convnext_gated\checkpoints\week13_convnext_tiny_gated_coral_best.pt --output-dir results\week13_coral_convnext_gated\calibration
-```
-
-Week 13 artifacts include calibration metrics, classwise thresholds, argmax and threshold confusion matrices, and a reliability diagram.
+Week 13 compares the baseline ConvNeXt-Tiny gated model against ConvNeXt-Tiny gated plus TDA correction. The main metrics are `minor_damage` precision, recall, F1, predicted minor count, no-damage false positives, and minor-damage false negatives.
 
 By default, experiment artifacts are saved under:
 
