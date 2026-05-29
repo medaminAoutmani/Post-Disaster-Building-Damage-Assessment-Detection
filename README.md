@@ -2,7 +2,7 @@
 
 Satellite-image building segmentation and object-level damage classification project using the xBD disaster dataset.
 
-The project builds a preprocessing and training pipeline for paired pre-disaster and post-disaster satellite images. It starts with binary and multiclass segmentation, transitions in Week 11 to building-level damage assessment, and moves in Week 12 toward embedding-centric object-level damage representation learning.
+The project builds a preprocessing and training pipeline for paired pre-disaster and post-disaster satellite images. It starts with binary and multiclass segmentation, transitions in Week 11 to building-level damage assessment, moves in Week 12 toward embedding-centric object-level damage representation learning, and adds Week 13 calibration-aware ordinal semantic damage learning.
 
 ## Structure
 
@@ -120,6 +120,7 @@ The raw dataset is intentionally ignored by Git with `.gitignore`.
 - Week 10: building-masked damage loss for rare-class learning on building pixels only
 - Week 11: object-level building extraction and Siamese damage classification
 - Week 12: advanced object-level representation learning with stronger backbones, metric learning, temporal fusion, embedding plots, and hierarchical classification
+- Week 13: calibration-aware ordinal learning with CORAL, EMD, label smoothing, multi-task heads, temperature scaling, classwise thresholds, and reliability diagnostics
 
 See `PROJECT_REPORT.md` for the full project report.
 
@@ -680,6 +681,59 @@ cross_attention
 ```
 
 Gated fusion learns how much the post-disaster embedding should overwrite the pre-disaster embedding. Cross-attention lets pre, post, diff, and absolute-change embeddings interact before classification.
+
+## Week 13 Calibration-Aware Ordinal Semantic Damage Learning
+
+Week 13 uses the Week 12 finding that the main bottleneck is calibrated semantic separation, especially `no_damage` vs subtle damage and `minor_damage` vs `major_damage`.
+
+The main Week 13 training script is:
+
+```text
+src/week13/week13_train_calibrated.py
+```
+
+Supported objectives:
+
+```text
+ce
+label_smoothing
+emd
+coral
+regression
+multitask
+```
+
+Recommended first run:
+
+```powershell
+python src\week13\week13_train_calibrated.py --dataset-root data\week11_buildings_week8_extra --results-dir results\week13_coral_convnext_gated --backbone convnext_tiny --fusion gated --loss-type coral --epochs 25 --batch-size 32 --class-weight-mode effective --augment-train
+```
+
+Distance-aware EMD run:
+
+```powershell
+python src\week13\week13_train_calibrated.py --dataset-root data\week11_buildings_week8_extra --results-dir results\week13_emd_convnext_gated --backbone convnext_tiny --fusion gated --loss-type emd --epochs 25 --batch-size 32 --class-weight-mode effective --augment-train
+```
+
+Multi-task run with class, damaged-presence, and severity-regression heads:
+
+```powershell
+python src\week13\week13_train_calibrated.py --dataset-root data\week11_buildings_week8_extra --results-dir results\week13_multitask_convnext_gated --backbone convnext_tiny --fusion gated --loss-type multitask --epochs 25 --batch-size 32 --class-weight-mode effective --augment-train
+```
+
+Post-training calibration is implemented in:
+
+```text
+src/week13/week13_calibrate.py
+```
+
+Example:
+
+```powershell
+python src\week13\week13_calibrate.py --dataset-root data\week11_buildings_week8_extra --checkpoint results\week13_coral_convnext_gated\checkpoints\week13_convnext_tiny_gated_coral_best.pt --output-dir results\week13_coral_convnext_gated\calibration
+```
+
+Week 13 artifacts include calibration metrics, classwise thresholds, argmax and threshold confusion matrices, and a reliability diagram.
 
 By default, experiment artifacts are saved under:
 

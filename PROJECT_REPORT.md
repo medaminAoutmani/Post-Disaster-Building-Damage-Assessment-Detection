@@ -11,9 +11,9 @@ The dataset contains:
 - JSON label files containing building polygons
 - Damage labels such as `no-damage`, `minor-damage`, `major-damage`, `destroyed`, and `un-classified`
 
-The project begins with binary building segmentation, where the model learns whether each pixel belongs to a labeled building or background. It then extends the same pipeline into multiclass damage segmentation, temporal Siamese modeling, class-imbalance handling, and multi-task learning. In the early models, the pre-disaster and post-disaster images are stacked together as a 6-channel input. In the later Siamese models, the two images are processed as separate RGB streams and fused at the feature level. Week 11 transitions from dense pixel-level segmentation to object-level building damage classification. Week 12 extends that transition into embedding-centric building-level representation learning.
+The project begins with binary building segmentation, where the model learns whether each pixel belongs to a labeled building or background. It then extends the same pipeline into multiclass damage segmentation, temporal Siamese modeling, class-imbalance handling, and multi-task learning. In the early models, the pre-disaster and post-disaster images are stacked together as a 6-channel input. In the later Siamese models, the two images are processed as separate RGB streams and fused at the feature level. Week 11 transitions from dense pixel-level segmentation to object-level building damage classification. Week 12 extends that transition into embedding-centric building-level representation learning. Week 13 adds calibration-aware ordinal learning to improve semantic decision boundaries for subtle damage.
 
-The current pipeline is divided into twelve development stages:
+The current pipeline is divided into thirteen development stages:
 
 1. Week 1: Data exploration, preprocessing, visualization, and mask generation
 2. Week 2: Dataset pipeline, train/validation/test splits, and the first baseline U-Net
@@ -27,6 +27,7 @@ The current pipeline is divided into twelve development stages:
 10. Week 10: Building-aware damage losses that focus optimization on meaningful damage pixels
 11. Week 11: Object-level building extraction and Siamese building damage classification
 12. Week 12: Advanced object-level representation learning for semantic damage separability
+13. Week 13: Calibration-aware ordinal semantic damage learning
 
 ## Week 1: Preprocessing and Data Understanding
 
@@ -1742,13 +1743,734 @@ predicted_major_damage
 
 The expected scientific outcome is not only a higher score, but a clearer explanation of whether stronger representations reduce the overlap between minor and major damage embeddings.
 
+### Week 12 Results
+
+The final Week 12 experiments used the expanded object-level dataset:
+
+```text
+data/week11_buildings_week8_extra
+```
+
+This means Week 12 results should be interpreted as object-level representation learning on the Week 11 crop pipeline with the additional Week 8 minority-class expansion data. The strongest Week 11 reference point remains:
+
+```text
+results/week11_capped_augmented
+```
+
+with:
+
+```text
+accuracy:              0.9431
+macro F1:              0.5067
+weighted F1:           0.9524
+minor_damage F1:       0.0262
+major_damage F1:       0.1561
+destroyed F1:          0.8743
+```
+
+#### ResNet34 Baseline
+
+The first Week 12 backbone test used ResNet34 with effective class weighting and no weighted sampler:
+
+```text
+python src/week12/week12_train_backbone.py --dataset-root data/week11_buildings_week8_extra --results-dir results/week12/week12_resnet34_effective_no_sampler --backbone resnet34 --epochs 25 --batch-size 32 --class-weight-mode effective --augment-train --max-train-per-class 5000 -1 -1 3091
+```
+
+Best checkpoint:
+
+```text
+epoch 25
+```
+
+Metrics:
+
+```text
+accuracy:              0.9698
+macro F1:              0.5699
+weighted F1:           0.9692
+
+no_damage F1:          0.9844
+minor_damage F1:       0.0536
+major_damage F1:       0.3333
+destroyed F1:          0.9083
+
+minor precision:       0.0682
+minor recall:          0.0441
+major precision:       0.3208
+major recall:          0.3469
+predicted_minor:       44
+predicted_major:       53
+```
+
+This was a positive result. ResNet34 improved macro F1, major-damage F1, destroyed F1, and overall accuracy compared with the Week 11 ResNet18 object-level baseline. The important scientific point is that the model did not simply overpredict minority classes: the predicted minor and major counts remained close to their validation supports.
+
+An earlier ResNet34 run using both effective class weighting and a weighted sampler collapsed into severe `major_damage` overprediction:
+
+```text
+accuracy:              0.0199
+macro F1:              0.0752
+predicted_no_damage:   0
+predicted_major:       12119
+```
+
+This showed that weighted sampling plus class-weighted loss can over-correct the imbalance problem for stronger Week 12 backbones. The remaining backbone experiments therefore removed the weighted sampler.
+
+#### EfficientNet-B0 Baseline
+
+EfficientNet-B0 was tested because it is often strong on local texture and small visual patterns. However, the result was negative:
+
+```text
+best_epoch:            23
+accuracy:              0.5948
+macro F1:              0.3682
+weighted F1:           0.7053
+
+minor_damage F1:       0.0162
+major_damage F1:       0.0387
+destroyed F1:          0.7055
+
+minor recall:          0.3971
+minor precision:       0.0083
+predicted_minor:       3271
+support_minor:         68
+
+major recall:          0.3469
+major precision:       0.0205
+predicted_major:       829
+support_major:         49
+```
+
+EfficientNet-B0 became highly sensitive to possible damage but not precise. It increased minority recall by flooding the validation set with minority predictions. This is not improved semantic separability; it is minority overprediction.
+
+#### ConvNeXt-Tiny Baseline
+
+ConvNeXt-Tiny was the strongest backbone experiment:
+
+```text
+accuracy:              0.9617
+macro F1:              0.5803
+weighted F1:           0.9623
+
+no_damage F1:          0.9800
+minor_damage F1:       0.0787
+major_damage F1:       0.3878
+destroyed F1:          0.8747
+
+minor precision:       0.0847
+minor recall:          0.0735
+predicted_minor:       59
+support_minor:         68
+
+major precision:       0.3878
+major recall:          0.3878
+predicted_major:       49
+support_major:         49
+```
+
+ConvNeXt-Tiny achieved the best macro F1 and the strongest combined minor/major behavior. The predicted minor and major counts were very close to the true validation supports, which is important because it indicates improved separability rather than a recall-only overprediction effect.
+
+Compared with ResNet34, ConvNeXt-Tiny improved:
+
+```text
+macro F1:              0.5699 -> 0.5803
+minor_damage F1:       0.0536 -> 0.0787
+major_damage F1:       0.3333 -> 0.3878
+```
+
+The main tradeoff was destroyed-class performance:
+
+```text
+destroyed F1:          0.9083 -> 0.8747
+accuracy:              0.9698 -> 0.9617
+```
+
+For the Week 12 research question, ConvNeXt-Tiny is still the better result because the goal is to improve semantic separability for ambiguous damage classes, especially `minor_damage` and `major_damage`.
+
+#### ArcFace Metric Learning
+
+ArcFace was tested using ConvNeXt-Tiny as the backbone:
+
+```text
+best_epoch:            18
+accuracy:              0.9485
+macro F1:              0.4948
+weighted F1:           0.9524
+
+minor_damage F1:       0.0750
+major_damage F1:       0.0833
+destroyed F1:          0.8477
+
+minor recall:          0.1324
+minor precision:       0.0523
+major recall:          0.0612
+major precision:       0.1304
+```
+
+ArcFace did not improve the Week 12 embedding space. It increased minor-damage recall slightly, but it severely reduced major-damage recognition:
+
+```text
+major F1:              0.3878 -> 0.0833
+major recall:          0.3878 -> 0.0612
+```
+
+This is a negative result. Plain ConvNeXt-Tiny with cross-entropy remains the best Week 12 end-to-end model.
+
+### Week 12 Hierarchical Classification Results
+
+The hierarchical experiments used ConvNeXt-Tiny with gated temporal fusion. The goal was to test whether removing `no_damage` from the damaged-class decision space improves minor/major/destroyed separation.
+
+#### Stage 1: No Damage vs Damaged
+
+Stage 1 was trained as a binary classifier:
+
+```text
+no_damage vs damaged
+```
+
+Best checkpoint:
+
+```text
+epoch 5
+```
+
+Metrics:
+
+```text
+accuracy:              0.9297
+macro F1:              0.8520
+
+no_damage precision:   0.9924
+no_damage recall:      0.9283
+no_damage F1:          0.9593
+
+damaged precision:     0.6159
+damaged recall:        0.9419
+damaged F1:            0.7448
+
+support_damaged:       1360
+predicted_damaged:     2080
+```
+
+This is a successful Stage 1 result because the priority is high damaged recall. The model catches most damaged buildings and sends extra borderline no-damage buildings to Stage 2. That is acceptable for a recall-oriented first stage.
+
+#### Stage 2: Minor vs Major vs Destroyed
+
+Stage 2 was trained only on damaged buildings:
+
+```text
+minor_damage vs major_damage vs destroyed
+```
+
+Best checkpoint:
+
+```text
+epoch 20
+```
+
+Metrics:
+
+```text
+accuracy:              0.9529
+macro F1:              0.7427
+
+minor_damage precision:0.7800
+minor_damage recall:   0.5735
+minor_damage F1:       0.6610
+predicted_minor:       50
+support_minor:         68
+
+major_damage precision:0.6279
+major_damage recall:   0.5510
+major_damage F1:       0.5870
+predicted_major:       43
+support_major:         49
+
+destroyed precision:   0.9708
+destroyed recall:      0.9895
+destroyed F1:          0.9801
+```
+
+This is one of the most important Week 12 findings. When `no_damage` is removed from the decision space, the damaged classes become much more separable. Stage 2 does not show minority flooding: predicted minor and major counts remain close to support. This strongly supports the hypothesis that much of the four-way classifier difficulty comes from no-damage interference and hierarchy/calibration, not from a complete absence of visual damage cues.
+
+#### Full Hierarchical Pipeline Threshold Sweep
+
+The full hierarchy combines Stage 1 and Stage 2. A damaged threshold controls how likely Stage 1 must be to send a building into Stage 2.
+
+Threshold `0.35`:
+
+```text
+accuracy:              0.9025
+macro F1:              0.4935
+weighted F1:           0.9180
+
+minor_damage F1:       0.1070
+major_damage F1:       0.1695
+destroyed F1:          0.7529
+predicted_minor:       175
+predicted_major:       246
+predicted_destroyed:   1998
+```
+
+Threshold `0.50`:
+
+```text
+accuracy:              0.9265
+macro F1:              0.5181
+weighted F1:           0.9355
+
+minor_damage F1:       0.1136
+major_damage F1:       0.2025
+destroyed F1:          0.7968
+predicted_minor:       108
+predicted_major:       188
+predicted_destroyed:   1784
+```
+
+Threshold `0.65`:
+
+```text
+accuracy:              0.9442
+macro F1:              0.5293
+weighted F1:           0.9485
+
+minor_damage F1:       0.0451
+major_damage F1:       0.2682
+destroyed F1:          0.8341
+predicted_minor:       65
+predicted_major:       130
+predicted_destroyed:   1627
+```
+
+Threshold `0.75`:
+
+```text
+accuracy:              0.9558
+macro F1:              0.5567
+weighted F1:           0.9570
+
+minor_damage F1:       0.0583
+major_damage F1:       0.3358
+destroyed F1:          0.8563
+predicted_minor:       35
+predicted_major:       88
+predicted_destroyed:   1527
+```
+
+The best full hierarchical pipeline was threshold `0.75`, but it remained below the plain ConvNeXt-Tiny end-to-end classifier:
+
+```text
+plain ConvNeXt-Tiny macro F1:   0.5803
+hierarchy threshold 0.75:       0.5567
+```
+
+The threshold sweep reveals the central hierarchy tradeoff:
+
+```text
+low threshold  -> high damaged recall but too many false damaged predictions
+high threshold -> better precision but subtle minor damage is filtered out
+```
+
+Thus, the hierarchy is scientifically valuable but not the best deployed end-to-end Week 12 model. Its strongest contribution is diagnostic: Stage 2 proves that damaged-class separability improves sharply once the overwhelming no-damage class is removed.
+
+### Week 12 Phase 4 Results: Temporal Attention Fusion
+
+The final Week 12 experiments tested whether learned temporal fusion can improve over the static ConvNeXt-Tiny concatenation baseline.
+
+The baseline fusion was:
+
+```text
+concat(pre, post, diff, abs(pre - post))
+```
+
+The two learned alternatives were:
+
+```text
+gated
+cross_attention
+```
+
+#### Gated Fusion
+
+Gated fusion learns how much the post-disaster embedding should replace or modify the pre-disaster embedding.
+
+Metrics:
+
+```text
+best_epoch:            11
+accuracy:              0.9580
+macro F1:              0.5759
+weighted F1:           0.9596
+
+no_damage F1:          0.9777
+minor_damage F1:       0.1250
+major_damage F1:       0.3333
+destroyed F1:          0.8675
+
+minor precision:       0.1333
+minor recall:          0.1176
+predicted_minor:       60
+support_minor:         68
+
+major precision:       0.2727
+major recall:          0.4286
+predicted_major:       77
+support_major:         49
+```
+
+Gated fusion produced the strongest `minor_damage` result of Week 12:
+
+```text
+concat minor F1:       0.0787
+gated minor F1:        0.1250
+```
+
+This is important because minor damage is the project bottleneck. The macro-F1 tradeoff compared with concat was very small:
+
+```text
+concat macro F1:       0.5803
+gated macro F1:        0.5759
+difference:            0.0044
+```
+
+Therefore, gated fusion is the most scientifically useful Week 12 model for improving subtle damage recognition, even though it is not the top model by macro F1.
+
+#### Cross-Attention Fusion
+
+Cross-attention lets the pre, post, difference, and absolute-change embeddings interact before classification.
+
+Metrics:
+
+```text
+best_epoch:            25
+accuracy:              0.9598
+macro F1:              0.5793
+weighted F1:           0.9597
+
+no_damage F1:          0.9789
+minor_damage F1:       0.0583
+major_damage F1:       0.4222
+destroyed F1:          0.8580
+
+minor precision:       0.0857
+minor recall:          0.0441
+predicted_minor:       35
+support_minor:         68
+
+major precision:       0.4634
+major recall:          0.3878
+predicted_major:       41
+support_major:         49
+```
+
+Cross-attention produced the strongest `major_damage` result:
+
+```text
+concat major F1:       0.3878
+cross-attention F1:    0.4222
+```
+
+However, it reduced minor-damage F1:
+
+```text
+concat minor F1:       0.0787
+cross-attention F1:    0.0583
+```
+
+This suggests that cross-attention helps more visible structural damage patterns but does not help the subtle minor-damage class.
+
+#### Phase 4 Interpretation
+
+The Phase 4 comparison is:
+
+```text
+ConvNeXt-Tiny + concat:
+macro F1:              0.5803
+minor_damage F1:       0.0787
+major_damage F1:       0.3878
+destroyed F1:          0.8747
+
+ConvNeXt-Tiny + gated:
+macro F1:              0.5759
+minor_damage F1:       0.1250
+major_damage F1:       0.3333
+destroyed F1:          0.8675
+
+ConvNeXt-Tiny + cross-attention:
+macro F1:              0.5793
+minor_damage F1:       0.0583
+major_damage F1:       0.4222
+destroyed F1:          0.8580
+```
+
+Static concat remains the best model by macro F1. However, gated fusion is selected as the preferred Week 12 model because it substantially improves the main bottleneck class, `minor_damage`, with only a negligible macro-F1 decrease. Cross-attention is a useful secondary result because it improves `major_damage`, but it does not address the minor-damage bottleneck.
+
+### Final Week 12 Ranking
+
+The Week 12 experiments can be ranked in two ways.
+
+By macro F1:
+
+```text
+1. ConvNeXt-Tiny CE, effective weighting, no sampler
+   macro F1: 0.5803
+
+2. ConvNeXt-Tiny cross-attention CE
+   macro F1: 0.5793
+
+3. ConvNeXt-Tiny gated CE
+   macro F1: 0.5759
+
+4. ResNet34 CE, effective weighting, no sampler
+   macro F1: 0.5699
+
+5. Hierarchical ConvNeXt, threshold 0.75
+   macro F1: 0.5567
+
+6. ConvNeXt-Tiny ArcFace
+   macro F1: 0.4948
+
+7. EfficientNet-B0 CE
+   macro F1: 0.3682
+
+8. ResNet34 with effective weighting and weighted sampler
+   macro F1: 0.0752
+```
+
+By the project's main scientific bottleneck, minor-damage separability:
+
+```text
+1. ConvNeXt-Tiny gated CE
+   minor_damage F1: 0.1250
+
+2. ConvNeXt-Tiny concat CE
+   minor_damage F1: 0.0787
+
+3. ConvNeXt-Tiny ArcFace
+   minor_damage F1: 0.0750
+
+4. ConvNeXt-Tiny cross-attention CE
+   minor_damage F1: 0.0583
+```
+
+The best Week 12 model by macro F1 is:
+
+```text
+results/week12/week12_convnext_tiny_effective_no_sampler
+```
+
+with:
+
+```text
+accuracy:              0.9617
+macro F1:              0.5803
+weighted F1:           0.9623
+minor_damage F1:       0.0787
+major_damage F1:       0.3878
+destroyed F1:          0.8747
+```
+
+The preferred Week 12 model for the project goal is:
+
+```text
+results/week12/week12_convnext_tiny_gated_effective_no_sampler
+```
+
+with:
+
+```text
+accuracy:              0.9580
+macro F1:              0.5759
+weighted F1:           0.9596
+minor_damage F1:       0.1250
+major_damage F1:       0.3333
+destroyed F1:          0.8675
+```
+
+### Final Week 12 Conclusion
+
+Week 12 confirms that the project has moved from dense segmentation optimization to semantic building-level representation learning. The strongest backbone improvement came from ConvNeXt-Tiny, which improved minor and major damage classification without causing minority-class flooding. ResNet34 was also a strong positive result, while EfficientNet-B0 and ArcFace were negative results under the tested settings.
+
+The hierarchical experiment provides the clearest scientific insight. Stage 2 achieved strong damaged-class performance when `no_damage` was removed, proving that object crops contain useful severity cues for minor, major, and destroyed buildings. However, the full hierarchy remained limited by Stage 1 threshold calibration: permissive thresholds over-send no-damage buildings into Stage 2, while strict thresholds suppress subtle minor-damage examples.
+
+The temporal-fusion experiment shows that learned fusion changes class-specific behavior. Cross-attention improves major-damage F1, while gated fusion gives the best minor-damage F1 of all Week 12 end-to-end models. Because minor damage is the central bottleneck, gated ConvNeXt-Tiny is selected as the preferred Week 12 model, even though static concat has the highest macro F1 by a very small margin.
+
+The final Week 12 conclusion is:
+
+```text
+ConvNeXt-Tiny with concat fusion is the best Week 12 model by macro F1, but
+ConvNeXt-Tiny with gated temporal fusion is the preferred Week 12 model for the
+project's scientific goal because it gives the strongest minor-damage F1. The
+hierarchical Stage 2 result remains the strongest diagnostic evidence that the
+remaining bottleneck is not localization or model capacity alone. The core
+challenge is calibrated semantic separation under class imbalance and label
+ambiguity, especially for minor damage.
+```
+
+## Week 13: Calibration-Aware Ordinal Semantic Damage Learning
+
+Week 13 builds directly on the strongest Week 12 conclusion: the remaining bottleneck is no longer mainly segmentation quality or raw feature capacity. The hierarchy experiment showed that `minor_damage`, `major_damage`, and `destroyed` can be separated when `no_damage` is removed from the decision space. The central problem is calibrated semantic separation under class imbalance and label ambiguity.
+
+The Week 13 objective is:
+
+```text
+Improve subtle-damage discrimination and decision calibration without causing minority flooding.
+```
+
+Week 13 therefore focuses on three research questions:
+
+1. Can ordinal-aware learning improve `minor_damage` and `major_damage` separation?
+2. Can calibration reduce false damaged predictions without suppressing damaged recall?
+3. Can multi-task supervision stabilize damage-presence and damage-severity decisions?
+
+### Week 13 Phase 1: Ordinal Damage Learning
+
+xBD damage labels are ordered:
+
+```text
+no_damage < minor_damage < major_damage < destroyed
+```
+
+Plain four-way cross-entropy treats all wrong classes as equally distant, which is not ideal. Week 13 implements ordinal alternatives in:
+
+```text
+src/week13/week13_losses.py
+src/week13/week13_train_calibrated.py
+```
+
+The supported Week 13 training objectives are:
+
+```text
+ce
+label_smoothing
+emd
+coral
+regression
+multitask
+```
+
+The recommended first Week 13 experiment starts from the Week 12 scientific model, ConvNeXt-Tiny with gated fusion:
+
+```powershell
+python src\week13\week13_train_calibrated.py --dataset-root data\week11_buildings_week8_extra --results-dir results\week13_coral_convnext_gated --backbone convnext_tiny --fusion gated --loss-type coral --epochs 25 --batch-size 32 --class-weight-mode effective --augment-train
+```
+
+CORAL predicts the ordered binary questions:
+
+```text
+damage >= minor_damage?
+damage >= major_damage?
+damage >= destroyed?
+```
+
+This makes the model learn severity as an ordered progression instead of four unrelated categories.
+
+Earth Mover Distance loss is also implemented:
+
+```powershell
+python src\week13\week13_train_calibrated.py --dataset-root data\week11_buildings_week8_extra --results-dir results\week13_emd_convnext_gated --backbone convnext_tiny --fusion gated --loss-type emd --epochs 25 --batch-size 32 --class-weight-mode effective --augment-train
+```
+
+EMD is distance-aware, so predicting `major_damage` for a true `minor_damage` crop is penalized less than predicting `destroyed`.
+
+### Week 13 Phase 2: Calibration Learning
+
+Week 13 adds post-training calibration in:
+
+```text
+src/week13/week13_calibrate.py
+```
+
+The calibration script supports:
+
+- temperature scaling
+- classwise threshold search
+- Expected Calibration Error
+- reliability diagrams
+- ordinal severity distance
+- damaged-vs-no-damage AUROC
+
+Example calibration run:
+
+```powershell
+python src\week13\week13_calibrate.py --dataset-root data\week11_buildings_week8_extra --checkpoint results\week13_coral_convnext_gated\checkpoints\week13_convnext_tiny_gated_coral_best.pt --output-dir results\week13_coral_convnext_gated\calibration
+```
+
+The key comparison is:
+
+```text
+argmax predictions vs calibrated classwise-threshold predictions
+```
+
+The calibration goal is not simply to increase recall. The goal is to improve `minor_damage` and `major_damage` behavior while monitoring whether predicted minority counts become unrealistic.
+
+### Week 13 Phase 3: Label Smoothing and Multi-Task Learning
+
+Label smoothing is implemented as a calibration-aware cross-entropy baseline:
+
+```powershell
+python src\week13\week13_train_calibrated.py --dataset-root data\week11_buildings_week8_extra --results-dir results\week13_label_smoothing_convnext_gated --backbone convnext_tiny --fusion gated --loss-type label_smoothing --label-smoothing 0.08 --epochs 25 --batch-size 32 --class-weight-mode effective --augment-train
+```
+
+Week 13 also implements a multi-task model with three heads:
+
+```text
+Head 1: four-way damage class
+Head 2: damaged vs no_damage presence
+Head 3: continuous severity score from 0 to 3
+```
+
+Run it with:
+
+```powershell
+python src\week13\week13_train_calibrated.py --dataset-root data\week11_buildings_week8_extra --results-dir results\week13_multitask_convnext_gated --backbone convnext_tiny --fusion gated --loss-type multitask --epochs 25 --batch-size 32 --class-weight-mode effective --augment-train
+```
+
+This phase directly tests the Week 12 hierarchy finding. Instead of forcing one classifier to learn damage existence and severity at the same time, the model receives auxiliary supervision for both concepts.
+
+### Week 13 Phase 4: Diagnostics
+
+Week 13 expands evaluation beyond macro F1. Each training run reports:
+
+```text
+macro F1
+minor_damage F1
+major_damage F1
+Expected Calibration Error
+mean ordinal severity distance
+damaged AUROC
+```
+
+The calibration script saves:
+
+```text
+metrics/calibration_metrics.json
+metrics/classwise_thresholds.csv
+confusion_matrices/argmax_confusion_matrix.csv
+confusion_matrices/threshold_confusion_matrix.csv
+visualizations/reliability_diagram.png
+```
+
+These artifacts are important because Week 13 is measuring whether the model becomes more trustworthy, not only whether the top-line F1 changes.
+
+### Week 13 Expected Scientific Outcome
+
+Week 13 should be judged by whether it reduces the gap between the strong Week 12 Stage 2 diagnostic result and the weaker full four-way classifier. The strongest positive result would be:
+
+- improved `minor_damage` F1 over the Week 12 gated ConvNeXt result of `0.1250`
+- stable or improved `major_damage` F1
+- lower ECE after calibration
+- realistic predicted counts for minor and major damage
+- lower mean severity distance
+
+The most likely useful conclusion is that xBD object-level damage assessment needs both representation quality and calibrated ordinal decision rules. Week 12 established the representation direction; Week 13 tests whether ordered labels, threshold calibration, and auxiliary damage-presence supervision can convert that representation into more reliable subtle-damage predictions.
+
 ## Future Extensions
 
-After the Week 12 object-level representation experiments, the next improvements should focus on making damage severity prediction more reliable:
+After Week 13, the next improvements should focus on deployment realism and richer error analysis:
 
 - Replace ground-truth object masks with predicted segmentation masks to test deployment realism.
 - Add disaster-type performance breakdowns for each final model.
 - Use embedding plots to identify whether minor/major errors are separability failures or label-quality failures.
-- Calibrate hierarchical Stage 1 thresholds for high damaged recall.
 - Investigate minor-damage label quality and visual ambiguity through crop-level error analysis.
-- Add richer persistent-homology summaries only if embedding-centric models still leave structured minority-class errors.
+- Add larger contextual crops, adaptive crop scaling, or oriented bounding boxes for subtle damage cues near building boundaries.
+- Explore patch-level temporal transformers only after calibration-aware ordinal baselines are measured.
