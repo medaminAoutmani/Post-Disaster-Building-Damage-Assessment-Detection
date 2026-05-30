@@ -1,9 +1,4 @@
-"""Build a unified disaster-event representation from vision and NLP signals.
-
-Topology/TDA can be attached as an optional experimental analysis branch, but it
-is excluded from the final fusion payload by default because Week 13 showed it
-did not improve the preferred vision model.
-"""
+"""Build a unified disaster-event representation from vision and NLP signals."""
 
 from __future__ import annotations
 
@@ -59,44 +54,27 @@ def normalize_social(payload: dict[str, Any]) -> dict[str, Any]:
 def build_event(
     event: str,
     satellite: dict[str, Any],
-    topology: dict[str, Any] | None,
     social: dict[str, Any],
     source_files: dict[str, str | None],
 ) -> dict[str, Any]:
-    fused_event = {
+    return {
         "event": event,
         "created_at_utc": datetime.now(timezone.utc).isoformat(),
         "satellite_assessment": normalize_satellite(satellite),
         "social_media": normalize_social(social),
-        "excluded_branches": {
-            "topology_tda": {
-                "excluded_from_final_fusion": topology is None,
-                "reason": (
-                    "Week 13 topology/TDA validation was retained as a negative-result analysis branch "
-                    "because it did not improve the preferred ConvNeXt-Tiny gated vision model."
-                ),
-            }
-        },
         "source_files": {key: value for key, value in source_files.items() if value},
     }
-    if topology is not None:
-        fused_event["topology_analysis"] = normalize_topology(topology)
-        fused_event["excluded_branches"]["topology_tda"]["excluded_from_final_fusion"] = True
-        fused_event["excluded_branches"]["topology_tda"]["attached_for_analysis_only"] = True
-    return fused_event
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Week 15: fuse satellite and social-media event signals.")
     parser.add_argument("--event", required=True, help="Stable event identifier, for example example_event.")
     parser.add_argument("--satellite-json", type=Path)
-    parser.add_argument("--topology-json", type=Path, help="Optional Week 13 TDA analysis JSON. Excluded from final fusion logic.")
     parser.add_argument("--social-json", type=Path)
     parser.add_argument("--output", type=Path, default=Path("results") / "week15_fusion" / "event.json")
     args = parser.parse_args()
 
     satellite = read_json(args.satellite_json, {"destroyed": 12, "major": 35, "minor": 48, "confidence": 0.87})
-    topology = read_json(args.topology_json, {}) if args.topology_json else None
     social = read_json(
         args.social_json,
         {
@@ -110,11 +88,9 @@ def main() -> None:
     event = build_event(
         args.event,
         satellite,
-        topology,
         social,
         {
             "satellite_json": str(args.satellite_json) if args.satellite_json else None,
-            "topology_json": str(args.topology_json) if args.topology_json else None,
             "social_json": str(args.social_json) if args.social_json else None,
         },
     )

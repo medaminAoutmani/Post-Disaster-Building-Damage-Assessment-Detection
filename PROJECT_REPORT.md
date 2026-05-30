@@ -2986,27 +2986,7 @@ total_damaged
 confidence
 ```
 
-Optional TDA audit export:
-
-```text
-python src\week13\week13_export_topology_validation.py --threshold-json results\week13_topology\threshold\topology_threshold.json --hybrid-metrics-json results\week13_topology\hybrid\metrics\hybrid_metrics.json --output-json results\week15_inputs\topology.json
-```
-
-This optional file is not required for final fusion. It is kept only to document the Week 13 negative result. The exported file contains:
-
-```text
-validated
-topology_confidence
-role
-topology_threshold_metrics
-hybrid_summary
-```
-
-In the current workspace, the Week 13 outputs are stored under `results/week13/week13_topology`. The equivalent command is:
-
-```text
-python src\week13\week13_export_topology_validation.py --threshold-json results\week13\week13_topology\threshold\topology_threshold.json --hybrid-metrics-json results\week13\week13_topology\hybrid\metrics\hybrid_metrics.json --output-json results\week15_inputs\topology.json
-```
+Week 13 topology/TDA export is not part of the final Week 15 fusion pipeline. It remains documented in the Week 13 section only as an experimental negative result.
 
 Export CrisisMMD social-media aggregate counts:
 
@@ -3027,12 +3007,6 @@ After the satellite and social files exist, the final fusion command becomes:
 
 ```text
 python src\week15\week15_fuse_event.py --event example_event --satellite-json results\week15_inputs\satellite.json --social-json results\week15_inputs\social_val.json --output results\week15_fusion\example_event.json
-```
-
-If a TDA audit trail is needed, it can be attached without using it as a final fusion signal:
-
-```text
-python src\week15\week15_fuse_event.py --event example_event --satellite-json results\week15_inputs\satellite.json --social-json results\week15_inputs\social_val.json --topology-json results\week15_inputs\topology.json --output results\week15_fusion\example_event_with_tda_audit.json
 ```
 
 ## Week 16: Retrieval Layer for RAG

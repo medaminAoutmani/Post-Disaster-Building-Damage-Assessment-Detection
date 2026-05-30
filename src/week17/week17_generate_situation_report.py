@@ -65,7 +65,6 @@ def call_ollama(prompt: str, model: str, url: str) -> str:
 
 def template_report(event: dict[str, Any]) -> str:
     satellite = event["satellite_assessment"]
-    topology = event.get("topology_analysis")
     social = event["social_media"]
     humanitarian = sorted_counts(social.get("humanitarian", {}))
     emotion = sorted_counts(social.get("emotion", {}))
@@ -106,14 +105,8 @@ def template_report(event: dict[str, Any]) -> str:
         "",
         "5. Confidence assessment",
         f"Vision-model confidence: {float(satellite.get('confidence', 0.0)):.0%}.",
-        "TDA/topology validation is excluded from final fusion because Week 13 did not improve the preferred vision model.",
         f"Overall confidence: {label}",
     ]
-    if topology is not None:
-        lines.insert(
-            -1,
-            f"TDA audit signal: {'confirmed' if topology.get('validated') else 'not confirmed'} with {float(topology.get('confidence', 0.0)):.0%} confidence.",
-        )
     return "\n".join(lines)
 
 
