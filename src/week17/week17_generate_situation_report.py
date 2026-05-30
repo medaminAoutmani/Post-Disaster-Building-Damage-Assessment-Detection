@@ -31,11 +31,8 @@ def sorted_counts(counts: dict[str, int]) -> list[tuple[str, int]]:
     return sorted(counts.items(), key=lambda item: item[1], reverse=True)
 
 
-def confidence_label(satellite_confidence: float | None, topology_confidence: float) -> str:
-    values = [topology_confidence]
-    if satellite_confidence is not None:
-        values.append(satellite_confidence)
-    score = sum(values) / max(len(values), 1)
+def confidence_label(satellite_confidence: float | None) -> str:
+    score = 0.0 if satellite_confidence is None else satellite_confidence
     if score >= 0.75:
         return "High"
     if score >= 0.50:
@@ -68,12 +65,12 @@ def call_ollama(prompt: str, model: str, url: str) -> str:
 
 def template_report(event: dict[str, Any]) -> str:
     satellite = event["satellite_assessment"]
-    topology = event["topology_validation"]
+    topology = event.get("topology_analysis")
     social = event["social_media"]
     humanitarian = sorted_counts(social.get("humanitarian", {}))
     emotion = sorted_counts(social.get("emotion", {}))
     total = satellite.get("total_damaged", satellite.get("destroyed", 0) + satellite.get("major", 0) + satellite.get("minor", 0))
-    label = confidence_label(satellite.get("confidence"), float(topology.get("confidence", 0.0)))
+    label = confidence_label(satellite.get("confidence"))
 
     priority_candidates = []
     if satellite.get("destroyed", 0) or satellite.get("major", 0):
@@ -108,9 +105,15 @@ def template_report(event: dict[str, Any]) -> str:
         *[f"{index}. {item}" for index, item in enumerate(dict.fromkeys(priority_candidates), start=1)],
         "",
         "5. Confidence assessment",
-        f"Topology validation is {'confirmed' if topology.get('validated') else 'not confirmed'} with {float(topology.get('confidence', 0.0)):.0%} confidence.",
+        f"Vision-model confidence: {float(satellite.get('confidence', 0.0)):.0%}.",
+        "TDA/topology validation is excluded from final fusion because Week 13 did not improve the preferred vision model.",
         f"Overall confidence: {label}",
     ]
+    if topology is not None:
+        lines.insert(
+            -1,
+            f"TDA audit signal: {'confirmed' if topology.get('validated') else 'not confirmed'} with {float(topology.get('confidence', 0.0)):.0%} confidence.",
+        )
     return "\n".join(lines)
 
 

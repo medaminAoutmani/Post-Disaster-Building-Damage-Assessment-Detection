@@ -21,7 +21,7 @@ def sentence_from_counts(title: str, counts: dict[str, int]) -> str:
 
 def build_document(event: dict[str, Any]) -> dict[str, Any]:
     satellite = event["satellite_assessment"]
-    topology = event["topology_validation"]
+    topology = event.get("topology_analysis")
     social = event["social_media"]
     humanitarian = social.get("humanitarian", {})
     emotion = social.get("emotion", {})
@@ -32,10 +32,13 @@ def build_document(event: dict[str, Any]) -> dict[str, Any]:
         f"{satellite.get('destroyed', 0)} destroyed, {satellite.get('major', 0)} major, "
         f"{satellite.get('minor', 0)} minor."
     )
-    topology_summary = (
-        f"Topology validation is {'positive' if topology.get('validated') else 'not confirmed'} "
-        f"with {float(topology.get('confidence', 0.0)):.0%} confidence."
-    )
+    topology_summary = "Topology/TDA is excluded from final fusion after the Week 13 negative result."
+    if topology is not None:
+        topology_summary = (
+            f"Topology/TDA analysis is attached for audit only: "
+            f"{'positive' if topology.get('validated') else 'not confirmed'} "
+            f"with {float(topology.get('confidence', 0.0)):.0%} confidence."
+        )
     social_summary = (
         f"{social.get('informative_posts', 0)} informative posts. "
         f"{sentence_from_counts('Humanitarian topics', humanitarian)} "
@@ -57,7 +60,7 @@ def build_document(event: dict[str, Any]) -> dict[str, Any]:
         "metadata": {
             "event": event["event"],
             "satellite_summary": satellite_summary,
-            "topology_summary": topology_summary,
+            "tda_summary": topology_summary,
             "informative_posts": social.get("informative_posts", 0),
             "top_humanitarian": top_items(humanitarian),
             "top_emotion": top_items(emotion),

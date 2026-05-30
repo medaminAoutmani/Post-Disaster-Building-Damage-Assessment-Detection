@@ -11,7 +11,7 @@ The dataset contains:
 - JSON label files containing building polygons
 - Damage labels such as `no-damage`, `minor-damage`, `major-damage`, `destroyed`, and `un-classified`
 
-The project begins with binary building segmentation, where the model learns whether each pixel belongs to a labeled building or background. It then extends the same pipeline into multiclass damage segmentation, temporal Siamese modeling, class-imbalance handling, and multi-task learning. In the early models, the pre-disaster and post-disaster images are stacked together as a 6-channel input. In the later Siamese models, the two images are processed as separate RGB streams and fused at the feature level. Week 11 transitions from dense pixel-level segmentation to object-level building damage classification. Week 12 extends that transition into embedding-centric building-level representation learning. Week 13 adds a topology-guided verifier for the specific semantic ambiguity between `no_damage` and `minor_damage`. Week 14 adds a CrisisMMD v2 Twitter module for text-based crisis understanding, humanitarian reasoning, damage-severity proxy modeling, and emotion-aware report generation. Weeks 15-17 fuse the vision, topology, and NLP branches into an event knowledge base, prepare retrieval-ready event documents, and generate disaster situation reports.
+The project begins with binary building segmentation, where the model learns whether each pixel belongs to a labeled building or background. It then extends the same pipeline into multiclass damage segmentation, temporal Siamese modeling, class-imbalance handling, and multi-task learning. In the early models, the pre-disaster and post-disaster images are stacked together as a 6-channel input. In the later Siamese models, the two images are processed as separate RGB streams and fused at the feature level. Week 11 transitions from dense pixel-level segmentation to object-level building damage classification. Week 12 extends that transition into embedding-centric building-level representation learning. Week 13 tests a topology-guided verifier for the specific semantic ambiguity between `no_damage` and `minor_damage`, but the final results show that TDA should be retained as a negative-result analysis branch rather than used in the final fusion system. Week 14 adds a CrisisMMD v2 Twitter module for text-based crisis understanding, humanitarian reasoning, damage-severity proxy modeling, and emotion-aware report generation. Weeks 15-17 fuse the vision and NLP branches into an event knowledge base, prepare retrieval-ready event documents, and generate disaster situation reports.
 
 The current pipeline is divided into seventeen development stages:
 
@@ -2645,7 +2645,7 @@ Week 14 extends the project beyond satellite imagery by adding a Twitter-based c
 data/CrisisMMD_v2.0
 ```
 
-This changes the system from a satellite-only damage classifier into a multi-source disaster intelligence pipeline. Satellite imagery estimates physical damage, topology features validate structural patterns, and social-media text adds real-time humanitarian context.
+This changes the system from a satellite-only damage classifier into a multi-source disaster intelligence pipeline. Satellite imagery estimates physical damage, and social-media text adds real-time humanitarian context. The Week 13 topology branch remains documented as an experimental analysis branch, but it is not used in the final fusion pipeline because it did not improve the preferred vision model.
 
 The Week 14 implementation is located in:
 
@@ -2886,7 +2886,7 @@ RoBERTa / DeBERTa Encoder
 Structured Crisis Understanding Vector
    |
    v
-Fusion with Satellite Damage + Topology Signals
+Fusion with Satellite Damage + Social-Media Signals
    |
    v
 RAG + LLM Report Generator
@@ -2895,7 +2895,6 @@ RAG + LLM Report Generator
 The main research contribution is that the final system is not only a damage classifier. It becomes a multi-source crisis understanding system combining:
 
 - satellite vision for physical damage severity
-- topology-guided validation for structural patterns
 - social-media humanitarian classification
 - emotion-aware crisis reasoning
 - LLM-based report generation
@@ -2904,14 +2903,11 @@ This makes Week 14 an important bridge from image-based damage detection toward 
 
 ## Week 15: Multi-Source Event Fusion
 
-Week 15 creates one unified event representation from the three branches developed so far:
+Week 15 creates one unified event representation from the two branches selected for the final system:
 
 ```text
 Vision Branch:
 pre-disaster image + post-disaster image -> satellite damage counts
-
-Topology Branch:
-structural topology signals -> validation and confidence
 
 NLP Branch:
 CrisisMMD posts -> informativeness, humanitarian topics, and emotions
@@ -2923,7 +2919,7 @@ The implementation is located in:
 src/week15/week15_fuse_event.py
 ```
 
-The script accepts separate JSON outputs from the satellite model, topology verifier, and social-media classifiers, then writes one event-level JSON file. The event name is a user-defined identifier; `example_event` below can be replaced by any disaster/event key used in the experiment:
+The script accepts JSON outputs from the satellite model and social-media classifiers, then writes one event-level JSON file. The event name is a user-defined identifier; `example_event` below can be replaced by any disaster/event key used in the experiment:
 
 ```text
 python src\week15\week15_fuse_event.py --event example_event --output results\week15_fusion\example_event.json
@@ -2940,11 +2936,6 @@ The resulting event object is the project knowledge-base unit:
     "minor": 48,
     "total_damaged": 95,
     "confidence": 0.87
-  },
-  "topology_validation": {
-    "validated": true,
-    "confidence": 0.81,
-    "role": "calibration_validation_anomaly_detection"
   },
   "social_media": {
     "informative_posts": 834,
@@ -2964,7 +2955,7 @@ The resulting event object is the project knowledge-base unit:
 }
 ```
 
-This is the correct role for topology after Week 13. The Week 13 experiment showed that topology should not be treated as a standalone four-class damage classifier. In Week 15, it becomes a calibration, anomaly-detection, and validation signal that supports the stronger satellite and social-media branches.
+The Week 13 topology experiment is intentionally excluded from the final Week 15 fusion logic. The measured topology threshold F1 was only `0.1111`, and the hybrid CNN + TDA correction reduced macro F1 from `0.5759` to `0.5595`. Therefore, TDA is kept as a negative-result analysis branch rather than a validation signal in the final system.
 
 ### Week 15 Input Exporters
 
@@ -2995,13 +2986,13 @@ total_damaged
 confidence
 ```
 
-Export topology validation:
+Optional TDA audit export:
 
 ```text
 python src\week13\week13_export_topology_validation.py --threshold-json results\week13_topology\threshold\topology_threshold.json --hybrid-metrics-json results\week13_topology\hybrid\metrics\hybrid_metrics.json --output-json results\week15_inputs\topology.json
 ```
 
-The exported file contains:
+This optional file is not required for final fusion. It is kept only to document the Week 13 negative result. The exported file contains:
 
 ```text
 validated
@@ -3032,10 +3023,16 @@ emotion counts, when emotion.csv exists
 representative_posts
 ```
 
-After these three files exist, the fusion command becomes:
+After the satellite and social files exist, the final fusion command becomes:
 
 ```text
-python src\week15\week15_fuse_event.py --event example_event --satellite-json results\week15_inputs\satellite.json --topology-json results\week15_inputs\topology.json --social-json results\week15_inputs\social_val.json --output results\week15_fusion\example_event.json
+python src\week15\week15_fuse_event.py --event example_event --satellite-json results\week15_inputs\satellite.json --social-json results\week15_inputs\social_val.json --output results\week15_fusion\example_event.json
+```
+
+If a TDA audit trail is needed, it can be attached without using it as a final fusion signal:
+
+```text
+python src\week15\week15_fuse_event.py --event example_event --satellite-json results\week15_inputs\satellite.json --social-json results\week15_inputs\social_val.json --topology-json results\week15_inputs\topology.json --output results\week15_fusion\example_event_with_tda_audit.json
 ```
 
 ## Week 16: Retrieval Layer for RAG
@@ -3058,7 +3055,7 @@ Each JSONL row contains:
 
 - a stable event ID
 - a compact text document for embedding or retrieval
-- metadata summaries for satellite damage, topology validation, humanitarian topics, and emotions
+- metadata summaries for satellite damage, humanitarian topics, and emotions
 - the original fused payload
 
 The default output is intentionally vector-database neutral:
@@ -3118,10 +3115,6 @@ The final system pipeline is therefore:
 Satellite xBD Damage Model
    |
    +-- destroyed / major / minor counts
-   |
-Topology Validation
-   |
-   +-- validation confidence and anomaly signal
    |
 CrisisMMD Text Classifiers
    |
