@@ -2,7 +2,7 @@
 
 Satellite-image building segmentation and object-level damage classification project using the xBD disaster dataset.
 
-The project builds a preprocessing and training pipeline for paired pre-disaster and post-disaster satellite images. It starts with binary and multiclass segmentation, transitions in Week 11 to building-level damage assessment, moves in Week 12 toward embedding-centric object-level damage representation learning, and adds Week 13 topology-guided semantic calibration for no-damage/minor-damage ambiguity.
+The project builds a preprocessing and training pipeline for paired pre-disaster and post-disaster satellite images. It starts with binary and multiclass segmentation, transitions in Week 11 to building-level damage assessment, moves in Week 12 toward embedding-centric object-level damage representation learning, adds Week 13 topology-guided semantic calibration for no-damage/minor-damage ambiguity, and extends in Week 14 to CrisisMMD v2 social-media crisis understanding.
 
 ## Structure
 
@@ -87,6 +87,15 @@ src/
     +-- week12_train_stage1.py
     +-- week12_train_stage2.py
     +-- week12_inference_pipeline.py
++-- week13/
+    +-- week13_error_isolation.py
+    +-- week13_topology_features.py
+    +-- week13_fit_topology_threshold.py
+    +-- week13_hybrid_correction.py
++-- week14/
+    +-- week14_prepare_crisismmd.py
+    +-- week14_emotion_pseudolabels.py
+    +-- week14_train_text_classifier.py
 splits/
 +-- train.txt
 +-- val.txt
@@ -121,6 +130,7 @@ The raw dataset is intentionally ignored by Git with `.gitignore`.
 - Week 11: object-level building extraction and Siamese damage classification
 - Week 12: advanced object-level representation learning with stronger backbones, metric learning, temporal fusion, embedding plots, and hierarchical classification
 - Week 13: topology-guided semantic calibration with error isolation, Betti-curve signatures, topology thresholding, and a constrained no-damage/minor-damage TDA correction
+- Week 14: CrisisMMD v2 tweet understanding with informativeness, humanitarian category, text-only damage severity proxy, and LLM pseudo-labeled emotion detection
 
 See `PROJECT_REPORT.md` for the full project report.
 
@@ -166,6 +176,24 @@ Run Week 6 experiments:
 
 ```powershell
 .\run_week6_experiments.ps1
+```
+
+Prepare Week 14 CrisisMMD v2 text tasks:
+
+```powershell
+python src\week14\week14_prepare_crisismmd.py --crisismmd-root data\CrisisMMD_v2.0
+```
+
+Train a Week 14 humanitarian classifier with DeBERTa-v3:
+
+```powershell
+python src\week14\week14_train_text_classifier.py --task-csv results\week14_crisismmd\processed\humanitarian.csv --output-dir results\week14_crisismmd\humanitarian_deberta --loss focal
+```
+
+Filter LLM emotion pseudo-labels after labeling `emotion_prompts.jsonl`:
+
+```powershell
+python src\week14\week14_emotion_pseudolabels.py --llm-jsonl results\week14_crisismmd\processed\emotion_llm_outputs.jsonl --min-votes 3 --min-agreement 0.67 --min-confidence 0.70
 ```
 
 `week6_train_deeplabv3plus.py` runs a torchvision DeepLabV3 model; the filename is kept for continuity, but the saved metadata uses the correct DeepLabV3 architecture name.

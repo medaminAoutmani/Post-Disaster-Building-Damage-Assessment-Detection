@@ -11,9 +11,9 @@ The dataset contains:
 - JSON label files containing building polygons
 - Damage labels such as `no-damage`, `minor-damage`, `major-damage`, `destroyed`, and `un-classified`
 
-The project begins with binary building segmentation, where the model learns whether each pixel belongs to a labeled building or background. It then extends the same pipeline into multiclass damage segmentation, temporal Siamese modeling, class-imbalance handling, and multi-task learning. In the early models, the pre-disaster and post-disaster images are stacked together as a 6-channel input. In the later Siamese models, the two images are processed as separate RGB streams and fused at the feature level. Week 11 transitions from dense pixel-level segmentation to object-level building damage classification. Week 12 extends that transition into embedding-centric building-level representation learning. Week 13 adds a topology-guided verifier for the specific semantic ambiguity between `no_damage` and `minor_damage`.
+The project begins with binary building segmentation, where the model learns whether each pixel belongs to a labeled building or background. It then extends the same pipeline into multiclass damage segmentation, temporal Siamese modeling, class-imbalance handling, and multi-task learning. In the early models, the pre-disaster and post-disaster images are stacked together as a 6-channel input. In the later Siamese models, the two images are processed as separate RGB streams and fused at the feature level. Week 11 transitions from dense pixel-level segmentation to object-level building damage classification. Week 12 extends that transition into embedding-centric building-level representation learning. Week 13 adds a topology-guided verifier for the specific semantic ambiguity between `no_damage` and `minor_damage`. Week 14 adds a CrisisMMD v2 Twitter module for text-based crisis understanding, humanitarian reasoning, damage-severity proxy modeling, and emotion-aware report generation.
 
-The current pipeline is divided into thirteen development stages:
+The current pipeline is divided into fourteen development stages:
 
 1. Week 1: Data exploration, preprocessing, visualization, and mask generation
 2. Week 2: Dataset pipeline, train/validation/test splits, and the first baseline U-Net
@@ -28,6 +28,7 @@ The current pipeline is divided into thirteen development stages:
 11. Week 11: Object-level building extraction and Siamese building damage classification
 12. Week 12: Advanced object-level representation learning for semantic damage separability
 13. Week 13: Topology-guided semantic calibration for no-damage/minor-damage ambiguity
+14. Week 14: CrisisMMD v2 social-media crisis understanding and emotion-aware humanitarian context
 
 ## Week 1: Preprocessing and Data Understanding
 
@@ -2507,6 +2508,121 @@ corrections.csv
 
 The most important scientific success condition is not just a higher minor recall. A good Week 13 result should improve `minor_damage` F1 without flooding the validation set with minor predictions.
 
+### Week 13 Final Results and Interpretation
+
+The Week 13 results are scientifically valuable even though the final hybrid system did not improve the main benchmark metric. This is a strong negative result rather than a failed experiment: the proposed TDA refinement mechanism produced interpretable topological corrections, but it did not outperform the learned deep representation baseline on the final benchmark.
+
+The baseline gated ConvNeXt-Tiny model achieved:
+
+```text
+accuracy:              0.9580
+macro F1:              0.5759
+weighted F1:           0.9596
+minor_damage F1:       0.1250
+minor_damage precision:0.1333
+minor_damage recall:   0.1176
+predicted_minor:       60
+```
+
+The hybrid CNN + TDA correction achieved:
+
+```text
+accuracy:              0.9593
+macro F1:              0.5595
+weighted F1:           0.9599
+minor_damage F1:       0.0588
+minor_damage precision:0.0882
+minor_damage recall:   0.0441
+predicted_minor:       34
+num_corrections:       28
+```
+
+The hybrid system slightly increased overall accuracy and weighted F1, but these metrics are dominated by the large `no_damage` class. The most important result is that macro F1 decreased and `minor_damage` F1 dropped from `0.1250` to `0.0588`. Therefore, the topology correction stage hurt minor-damage recognition under the tested rule.
+
+This does not mean the TDA idea was invalid. Instead, it reveals a deeper scientific conclusion:
+
+```text
+The CNN learned stronger semantic representations for subtle damage than the
+handcrafted topology verifier.
+```
+
+The topology verifier behaved mainly as a conservative filter. It reduced the number of predicted `minor_damage` buildings:
+
+```text
+predicted_minor_damage: 60 -> 34
+minor_damage recall:   0.1176 -> 0.0441
+```
+
+This means the TDA module mostly suppressed minor predictions instead of recovering hidden minor-damage cases. The correction rule improved no-damage conservatism, but it removed too many true minor-damage examples.
+
+The threshold calibration confirms the same pattern:
+
+```text
+topology threshold F1:        0.1111
+topology threshold precision: 0.0893
+topology threshold recall:    0.1471
+```
+
+These values show that topology-space separation between `no_damage` and `minor_damage` is weak. Persistent-homology-inspired features captured some meaningful structural change, but the distributions overlapped too much for a direct threshold rule to be reliable.
+
+There is still important positive evidence. The topology prototypes are not random. For example, `edge_components_mean` differs strongly between the two learned prototypes:
+
+```text
+no_damage prototype:     -0.005
+minor_damage prototype:   0.863
+```
+
+This indicates that TDA is detecting real geometric differences. However, only some minor-damage cases show visible topological deformation.
+
+The core reason is that minor damage is often not topological. Many minor-damage examples in xBD are not primarily structural deformations. They may involve:
+
+- discoloration
+- small cracks
+- tiny debris
+- texture variation
+- subtle roof changes
+
+Persistent homology is better aligned with:
+
+- connectivity
+- holes
+- connected components
+- fragmentation
+- structural deformation
+
+This mismatch explains why the hybrid verifier struggled. It searched for structural topology change, while many `minor_damage` examples are appearance-level or texture-level changes without a strong change in topology.
+
+The best Week 13 conclusion is:
+
+```text
+The topology-guided correction module produced interpretable geometric change
+measurements but did not improve minor-damage recognition. The results suggest
+that persistent homology captures structural deformation and fragmentation,
+which are more aligned with major and destroyed damage than with subtle minor
+damage. Therefore, the remaining minor-damage bottleneck appears to depend more
+on semantic and texture-level temporal cues than on explicit topological change.
+```
+
+This creates a coherent research progression across the project:
+
+```text
+Week 10-11:
+Dense segmentation struggles with ambiguous damage.
+
+Week 11-12:
+Object-level semantic representation learning performs better.
+
+Week 12:
+Gated temporal fusion improves subtle damage recognition.
+
+Week 13:
+Pure topological verification alone cannot reliably separate minor damage,
+because minor damage is often semantic or texture-level rather than structural
+topology-level.
+```
+
+Week 13 is therefore a meaningful negative result. It shows that topology is interpretable and can measure structural deformation, but it should not replace or directly override the learned CNN representation for subtle `minor_damage` classification. A better future use would be to integrate topology as an auxiliary feature, diagnostic signal, or regularizer rather than as a hard post-processing threshold.
+
 ### Week 13 Scientific Hypothesis
 
 The Week 13 hypothesis is:
@@ -2518,9 +2634,225 @@ but topology can act as a targeted verifier for subtle no_damage/minor_damage am
 
 This is a much narrower and stronger TDA claim than earlier handcrafted-feature experiments. Week 13 does not claim that topology solves xBD damage classification. It tests whether topology can improve the one region where semantic ambiguity is highest and where minor-damage performance matters most.
 
+## Week 14: CrisisMMD v2 Social-Media Crisis Understanding
+
+Week 14 extends the project beyond satellite imagery by adding a Twitter-based crisis understanding module using the local CrisisMMD v2 dataset:
+
+```text
+data/CrisisMMD_v2.0
+```
+
+This changes the system from a satellite-only damage classifier into a multi-source disaster intelligence pipeline. Satellite imagery estimates physical damage, topology features validate structural patterns, and social-media text adds real-time humanitarian context.
+
+The Week 14 implementation is located in:
+
+```text
+src/week14/week14_prepare_crisismmd.py
+src/week14/week14_emotion_pseudolabels.py
+src/week14/week14_train_text_classifier.py
+```
+
+### Week 14 Task Mapping
+
+The final CrisisMMD v2 mapping uses the corrected task definitions.
+
+Task 1 is binary informativeness classification:
+
+```text
+input: tweet_text
+label: text_info
+
+classes:
+- informative
+- not_informative
+```
+
+The removed `dont_know_or_cant_judge` label is treated as an ignored label if it appears in raw files.
+
+Task 2 is single-label humanitarian classification:
+
+```text
+input: tweet_text
+label: text_human
+
+classes:
+- affected_individuals
+- infrastructure_and_utility_damage
+- injured_or_dead_people
+- missing_or_found_people
+- rescue_volunteering_or_donation_effort
+- vehicle_damage
+- other_relevant_information
+- not_humanitarian
+```
+
+This is modeled as an eight-class multi-class classification problem. The `not_humanitarian` class is kept as a real v2 label instead of being discarded, because it makes the classifier useful on mixed crisis streams where many tweets are not actionable humanitarian reports.
+
+Task 3 is damage-severity proxy classification:
+
+```text
+input: tweet_text
+label: image_damage
+
+classes:
+- severe_damage
+- mild_damage
+- little_or_no_damage
+```
+
+Although the CrisisMMD column is named `image_damage`, Week 14 uses it as a text-only proxy target. This is a valid research setup because the tweet text and attached image describe the same crisis post. Null damage rows and ambiguous `dont_know_or_cant_judge` labels are removed from the training set.
+
+### Week 14 Data Preparation
+
+The preparation script reads all event TSV files from `data/CrisisMMD_v2.0/annotations`, normalizes labels, deduplicates text-level tasks by `tweet_id`, and writes task-specific CSV files:
+
+```text
+results/week14_crisismmd/processed/informativeness.csv
+results/week14_crisismmd/processed/humanitarian.csv
+results/week14_crisismmd/processed/damage_severity.csv
+results/week14_crisismmd/processed/emotion_prompts.jsonl
+results/week14_crisismmd/processed/label_maps.json
+results/week14_crisismmd/processed/summary.json
+```
+
+The default split is event-based to reduce leakage:
+
+```text
+train: all events except validation and test events
+val:   mexico_earthquake
+test:  srilanka_floods
+```
+
+This avoids mixing the same disaster event across train and test under the default setup. The validation and test events can be changed with `--val-events` and `--test-events`.
+
+The generated Week 14 task sizes are:
+
+```text
+informativeness:
+train 13990, val 1238, test 830
+
+humanitarian:
+train 13990, val 1238, test 830
+
+damage_severity:
+train 2950, val 165, test 83
+```
+
+The humanitarian label distribution confirms the expected CrisisMMD imbalance:
+
+```text
+other_relevant_information:              5951
+not_humanitarian:                        4556
+rescue_volunteering_or_donation_effort:  3292
+infrastructure_and_utility_damage:       1208
+injured_or_dead_people:                   486
+affected_individuals:                     471
+vehicle_damage:                            54
+missing_or_found_people:                   40
+```
+
+Because the minority classes are very small, Week 14 training supports class-weighted cross-entropy and focal loss.
+
+### Week 14 Emotion Detection
+
+Experiment C adds emotion detection through pseudo-labeling. The emotion set is:
+
+```text
+Fear
+Sadness
+Anger
+Hope
+Neutral
+```
+
+The preparation script writes `emotion_prompts.jsonl` with one prompt per tweet:
+
+```text
+Task: Classify the crisis tweet emotion into exactly one label from
+[Fear, Sadness, Anger, Hope, Neutral]. Answer only one label.
+
+Tweet: <tweet_text>
+```
+
+The pseudo-label filtering script accepts JSONL outputs from one or more LLM labeling passes and applies quality control:
+
+- Normalize outputs to the five allowed labels.
+- Drop invalid labels.
+- Drop individual low-confidence LLM outputs when confidence scores are available.
+- Majority vote across repeated labels for the same tweet.
+- Filter low-agreement tweets with `--min-agreement`.
+- Require multiple votes with `--min-votes` when several LLM passes are available.
+
+The final emotion training file is:
+
+```text
+results/week14_crisismmd/processed/emotion.csv
+```
+
+This keeps emotion detection publishable as a weak-supervision experiment rather than treating raw LLM outputs as unquestioned ground truth.
+
+### Week 14 Training and Metrics
+
+The text classifier script uses Hugging Face transformer models. The intended model for the final emotion classifier is:
+
+```text
+microsoft/deberta-v3-base
+```
+
+The same training script can also train the informativeness, humanitarian, and damage-severity tasks:
+
+```powershell
+python src\week14\week14_train_text_classifier.py --task-csv results\week14_crisismmd\processed\humanitarian.csv --output-dir results\week14_crisismmd\humanitarian_deberta --loss focal
+```
+
+The primary metric is macro F1, because the humanitarian and emotion tasks are imbalanced and minority classes are operationally important. Week 14 also reports weighted F1, accuracy, and a confusion matrix.
+
+The correct evaluation priority is:
+
+```text
+1. Macro F1
+2. Weighted F1
+3. Confusion matrix
+```
+
+### Week 14 Full Pipeline Integration
+
+The social-media module produces a structured crisis understanding vector:
+
+```text
+Tweet Text
+   |
+   v
+RoBERTa / DeBERTa Encoder
+   |
+   +-- Task 1: Informativeness
+   +-- Task 2: Humanitarian Need
+   +-- Task 3: Damage Severity Proxy
+   +-- Task 4: Emotion
+   |
+   v
+Structured Crisis Understanding Vector
+   |
+   v
+Fusion with Satellite Damage + Topology Signals
+   |
+   v
+RAG + LLM Report Generator
+```
+
+The main research contribution is that the final system is not only a damage classifier. It becomes a multi-source crisis understanding system combining:
+
+- satellite vision for physical damage severity
+- topology-guided validation for structural patterns
+- social-media humanitarian classification
+- emotion-aware crisis reasoning
+- LLM-based report generation
+
+This makes Week 14 an important bridge from image-based damage detection toward practical disaster-response intelligence.
+
 ## Future Extensions
 
-After Week 13, the next improvements should focus on deployment realism and richer error analysis:
+After Week 14, the next improvements should focus on deployment realism and richer multi-source evaluation:
 
 - Replace ground-truth object masks with predicted segmentation masks to test deployment realism.
 - Add disaster-type performance breakdowns for each final model.
@@ -2528,3 +2860,5 @@ After Week 13, the next improvements should focus on deployment realism and rich
 - Investigate minor-damage label quality and visual ambiguity through crop-level error analysis.
 - Add larger contextual crops, adaptive crop scaling, or oriented bounding boxes for subtle damage cues near building boundaries.
 - Explore patch-level temporal transformers only after the topology verifier has been compared against the gated ConvNeXt baseline.
+- Evaluate the Week 14 classifiers under both official CrisisMMD splits and event-held-out splits.
+- Add a RAG report-generation stage that consumes satellite predictions, topology summaries, humanitarian predictions, and emotion labels together.
