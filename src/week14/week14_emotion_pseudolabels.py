@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import random
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -53,6 +54,9 @@ def main() -> None:
     parser.add_argument("--min-votes", type=int, default=1)
     parser.add_argument("--min-agreement", type=float, default=0.67)
     parser.add_argument("--min-confidence", type=float, default=0.0, help="Drop individual LLM labels below this confidence when provided.")
+    parser.add_argument("--split-mode", choices=["preserve", "stratified"], default="preserve")
+    parser.add_argument("--val-ratio", type=float, default=0.2)
+    parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 
     base_rows = load_base_rows(args.base_csv)
@@ -65,33 +69,48 @@ def main() -> None:
         if tweet_id in base_rows and label and confidence >= args.min_confidence:
             votes[tweet_id].append(label)
 
+    kept_rows = []
+    rng = random.Random(args.seed)
+    by_emotion: dict[str, list[dict[str, str | int | float]]] = defaultdict(list)
+    for tweet_id, labels in sorted(votes.items()):
+        counts = Counter(labels)
+        emotion, count = counts.most_common(1)[0]
+        agreement = count / len(labels)
+        if len(labels) < args.min_votes or agreement < args.min_agreement:
+            continue
+        base = base_rows[tweet_id]
+        row = {
+            "split": base["split"],
+            "event": base["event"],
+            "tweet_id": tweet_id,
+            "tweet_text": base["tweet_text"],
+            "emotion": emotion,
+            "label_id": EMOTION_LABELS.index(emotion),
+            "agreement": round(agreement, 4),
+            "num_votes": len(labels),
+        }
+        kept_rows.append(row)
+        by_emotion[emotion].append(row)
+
+    if args.split_mode == "stratified":
+        for rows in by_emotion.values():
+            rng.shuffle(rows)
+            val_count = 1 if len(rows) > 1 else 0
+            val_count = max(val_count, int(round(len(rows) * args.val_ratio))) if len(rows) > 1 else 0
+            for index, row in enumerate(rows):
+                row["split"] = "val" if index < val_count else "train"
+
     args.output_csv.parent.mkdir(parents=True, exist_ok=True)
     fieldnames = ["split", "event", "tweet_id", "tweet_text", "emotion", "label_id", "agreement", "num_votes"]
-    kept = 0
     with args.output_csv.open("w", encoding="utf-8", newline="") as file:
         writer = csv.DictWriter(file, fieldnames=fieldnames)
         writer.writeheader()
-        for tweet_id, labels in sorted(votes.items()):
-            counts = Counter(labels)
-            emotion, count = counts.most_common(1)[0]
-            agreement = count / len(labels)
-            if len(labels) < args.min_votes or agreement < args.min_agreement:
-                continue
-            base = base_rows[tweet_id]
-            writer.writerow(
-                {
-                    "split": base["split"],
-                    "event": base["event"],
-                    "tweet_id": tweet_id,
-                    "tweet_text": base["tweet_text"],
-                    "emotion": emotion,
-                    "label_id": EMOTION_LABELS.index(emotion),
-                    "agreement": round(agreement, 4),
-                    "num_votes": len(labels),
-                }
-            )
-            kept += 1
-    print(f"Kept {kept} emotion pseudo-labels at agreement >= {args.min_agreement}.")
+        writer.writerows(kept_rows)
+    split_counts = Counter(str(row["split"]) for row in kept_rows)
+    emotion_counts = Counter(str(row["emotion"]) for row in kept_rows)
+    print(f"Kept {len(kept_rows)} emotion pseudo-labels at agreement >= {args.min_agreement}.")
+    print(f"Split counts: {dict(split_counts)}")
+    print(f"Emotion counts: {dict(emotion_counts)}")
 
 
 if __name__ == "__main__":
