@@ -129,6 +129,7 @@ def main() -> None:
     parser.add_argument("--host", default="http://localhost:11434")
     parser.add_argument("--model", default="llama3:8b")
     parser.add_argument("--limit", type=int, default=500, help="Number of new tweets to label. Use -1 for all.")
+    parser.add_argument("--events", nargs="*", default=None, help="Only label these CrisisMMD event names.")
     parser.add_argument("--batch-size", type=int, default=5)
     parser.add_argument("--sleep", type=float, default=0.0)
     parser.add_argument("--retries", type=int, default=2)
@@ -136,6 +137,7 @@ def main() -> None:
     args = parser.parse_args()
 
     seen = completed_ids(args.output_jsonl)
+    allowed_events = set(args.events) if args.events else None
     args.output_jsonl.parent.mkdir(parents=True, exist_ok=True)
     written = 0
     pending: list[dict] = []
@@ -174,6 +176,8 @@ def main() -> None:
         for row in read_jsonl(args.prompts_jsonl):
             if args.limit >= 0 and written >= args.limit:
                 break
+            if allowed_events is not None and str(row.get("event", "")) not in allowed_events:
+                continue
             if str(row["tweet_id"]) in seen:
                 continue
             pending.append(row)

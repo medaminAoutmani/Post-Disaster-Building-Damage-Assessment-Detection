@@ -141,6 +141,7 @@ def main() -> None:
     parser.add_argument("--output-jsonl", type=Path, default=Path("results") / "week14_crisismmd" / "processed" / "emotion_llm_outputs.jsonl")
     parser.add_argument("--model", default="gemini-2.5-flash")
     parser.add_argument("--limit", type=int, default=500, help="Number of new tweets to label. Use -1 for all.")
+    parser.add_argument("--events", nargs="*", default=None, help="Only label these CrisisMMD event names.")
     parser.add_argument("--batch-size", type=int, default=10, help="Tweets to label per Gemini request.")
     parser.add_argument("--sleep", type=float, default=0.05, help="Seconds to sleep between requests.")
     parser.add_argument("--retries", type=int, default=3)
@@ -158,6 +159,7 @@ def main() -> None:
 
     client = genai.Client(api_key=api_key)
     seen = completed_ids(args.output_jsonl)
+    allowed_events = set(args.events) if args.events else None
     args.output_jsonl.parent.mkdir(parents=True, exist_ok=True)
 
     written = 0
@@ -201,6 +203,8 @@ def main() -> None:
         for row in read_jsonl(args.prompts_jsonl):
             tweet_id = str(row["tweet_id"])
             if tweet_id in seen:
+                continue
+            if allowed_events is not None and str(row.get("event", "")) not in allowed_events:
                 continue
             if args.limit >= 0 and written >= args.limit:
                 break
