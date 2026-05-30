@@ -39,7 +39,7 @@ class CrisisTextDataset(Dataset):
 
 
 class FocalLoss(nn.Module):
-    def __init__(self, weights: torch.Tensor | None = None, gamma: float = 2.0) -> None:
+    def __init__(self, weights: torch.Tensor | None = None, gamma: float = 1.5) -> None:
         super().__init__()
         self.weights = weights
         self.gamma = gamma
@@ -86,10 +86,26 @@ def metrics_from_confusion(matrix: list[list[int]]) -> dict[str, float]:
     }
 
 
-def class_weights(rows: list[dict[str, str]], num_classes: int) -> torch.Tensor:
+def class_weights(rows: list[dict[str, str]], num_classes: int, mode: str, max_weight: float) -> torch.Tensor | None:
+    if mode == "none":
+        return None
     counts = Counter(int(row["label_id"]) for row in rows)
     total = sum(counts.values())
-    return torch.tensor([total / max(num_classes * counts.get(index, 1), 1) for index in range(num_classes)], dtype=torch.float32)
+    values = []
+    for index in range(num_classes):
+        count = max(counts.get(index, 1), 1)
+        inverse = total / max(num_classes * count, 1)
+        if mode == "sqrt":
+            weight = inverse ** 0.5
+        elif mode == "effective":
+            beta = 0.999
+            effective_num = 1.0 - beta**count
+            weight = (1.0 - beta) / max(effective_num, 1e-12)
+        else:
+            weight = inverse
+        values.append(min(weight, max_weight))
+    weights = torch.tensor(values, dtype=torch.float32)
+    return weights / weights.mean().clamp_min(1e-12)
 
 
 @torch.no_grad()
@@ -115,6 +131,9 @@ def main() -> None:
     parser.add_argument("--max-length", type=int, default=128)
     parser.add_argument("--lr", type=float, default=2e-5)
     parser.add_argument("--loss", choices=["ce", "weighted_ce", "focal"], default="weighted_ce")
+    parser.add_argument("--class-weight-mode", choices=["none", "sqrt", "inverse", "effective"], default="sqrt")
+    parser.add_argument("--max-class-weight", type=float, default=8.0)
+    parser.add_argument("--focal-gamma", type=float, default=1.5)
     parser.add_argument("--use-fast-tokenizer", action="store_true", help="Use the fast tokenizer when the local environment supports conversion.")
     args = parser.parse_args()
 
@@ -134,11 +153,14 @@ def main() -> None:
     model = AutoModelForSequenceClassification.from_pretrained(args.model_name, num_labels=num_classes).to(device).float()
     train_loader = DataLoader(CrisisTextDataset(train_rows, tokenizer, args.max_length), batch_size=args.batch_size, shuffle=True)
     val_loader = DataLoader(CrisisTextDataset(val_rows, tokenizer, args.max_length), batch_size=args.batch_size)
-    weights = class_weights(train_rows, num_classes).to(device) if args.loss in {"weighted_ce", "focal"} else None
-    criterion: nn.Module = FocalLoss(weights) if args.loss == "focal" else nn.CrossEntropyLoss(weight=weights)
+    weights = class_weights(train_rows, num_classes, args.class_weight_mode, args.max_class_weight)
+    weights = weights.to(device) if weights is not None and args.loss in {"weighted_ce", "focal"} else None
+    criterion: nn.Module = FocalLoss(weights, gamma=args.focal_gamma) if args.loss == "focal" else nn.CrossEntropyLoss(weight=weights)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
 
     history = []
+    best_macro_f1 = -1.0
+    best_dir = args.output_dir / "best_checkpoint"
     for epoch in range(1, args.epochs + 1):
         model.train()
         total_loss = 0.0
@@ -152,12 +174,31 @@ def main() -> None:
         metrics, _ = evaluate(model, val_loader, device, num_classes)
         history.append({"epoch": epoch, "train_loss": total_loss / max(len(train_loader), 1), **metrics})
         print(history[-1])
+        if metrics["macro_f1"] > best_macro_f1:
+            best_macro_f1 = metrics["macro_f1"]
+            best_dir.mkdir(parents=True, exist_ok=True)
+            model.save_pretrained(best_dir)
+            tokenizer.save_pretrained(best_dir)
 
     val_metrics, val_confusion = evaluate(model, val_loader, device, num_classes)
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    model.save_pretrained(args.output_dir / "checkpoint")
-    tokenizer.save_pretrained(args.output_dir / "checkpoint")
-    (args.output_dir / "metrics.json").write_text(json.dumps({"val": val_metrics, "history": history}, indent=2), encoding="utf-8")
+    final_dir = args.output_dir / "checkpoint"
+    model.save_pretrained(final_dir)
+    tokenizer.save_pretrained(final_dir)
+    (args.output_dir / "metrics.json").write_text(
+        json.dumps(
+            {
+                "val": val_metrics,
+                "best_macro_f1": best_macro_f1,
+                "history": history,
+                "class_weight_mode": args.class_weight_mode,
+                "max_class_weight": args.max_class_weight,
+                "focal_gamma": args.focal_gamma,
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
     (args.output_dir / "confusion_matrix.json").write_text(json.dumps(val_confusion, indent=2), encoding="utf-8")
 
 
