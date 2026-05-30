@@ -87,6 +87,9 @@ def label_batch(host: str, model: str, rows: list[dict], timeout: int) -> list[d
     payload = json.loads(text)
     if isinstance(payload, dict) and "labels" in payload:
         payload = payload["labels"]
+    if isinstance(payload, dict) and {"emotion", "confidence"}.issubset(payload):
+        payload["tweet_id"] = str(rows[0]["tweet_id"])
+        payload = [payload]
     if not isinstance(payload, list):
         raise ValueError("Expected Ollama to return a JSON array.")
 
