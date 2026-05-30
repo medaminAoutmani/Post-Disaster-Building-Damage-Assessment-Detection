@@ -10,3 +10,5 @@ optuna
 transformers
 sentencepiece
 protobuf
+openai
+google-genai

@@ -2815,6 +2815,36 @@ The correct evaluation priority is:
 3. Confusion matrix
 ```
 
+### Week 14 Experimental Results
+
+The first Week 14 experiments trained `microsoft/deberta-v3-base` on event-held-out CrisisMMD v2 splits. The reported result for each task is the best validation macro F1 epoch, because macro F1 is the primary metric under class imbalance.
+
+```text
+Task                  Best epoch   Accuracy   Macro F1   Weighted F1
+Informativeness       2            0.7973     0.7032     0.7852
+Humanitarian          1            0.6721     0.4708     0.6630
+Damage severity       3            0.8424     0.3324     0.7860
+```
+
+The informativeness classifier is the strongest Week 14 baseline. This is expected because it is a binary task with substantially more stable textual cues.
+
+The humanitarian classifier is harder because it is an eight-class task with severe class imbalance. The event-held-out validation split contains very small minority classes such as `vehicle_damage` and `missing_or_found_people`, so macro F1 is much lower than weighted F1. The best humanitarian run used weighted cross-entropy with square-root class weighting rather than aggressive focal loss.
+
+The damage-severity proxy task reaches high accuracy and weighted F1, but macro F1 remains low. This suggests the model is learning the dominant severity pattern while still struggling with minority severity classes. This is an important limitation because the `image_damage` label is used as a text-only proxy target rather than a direct text annotation.
+
+The first focal-loss humanitarian run collapsed because the smallest classes were extremely rare:
+
+```text
+missing_or_found_people: 23 training examples
+vehicle_damage:         52 training examples
+```
+
+The final trainer therefore uses gentler class weighting by default and saves the best validation macro-F1 checkpoint:
+
+```text
+results/week14_crisismmd/<experiment_name>/best_checkpoint
+```
+
 ### Week 14 Full Pipeline Integration
 
 The social-media module produces a structured crisis understanding vector:
