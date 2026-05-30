@@ -11,9 +11,9 @@ The dataset contains:
 - JSON label files containing building polygons
 - Damage labels such as `no-damage`, `minor-damage`, `major-damage`, `destroyed`, and `un-classified`
 
-The project begins with binary building segmentation, where the model learns whether each pixel belongs to a labeled building or background. It then extends the same pipeline into multiclass damage segmentation, temporal Siamese modeling, class-imbalance handling, and multi-task learning. In the early models, the pre-disaster and post-disaster images are stacked together as a 6-channel input. In the later Siamese models, the two images are processed as separate RGB streams and fused at the feature level. Week 11 transitions from dense pixel-level segmentation to object-level building damage classification. Week 12 extends that transition into embedding-centric building-level representation learning. Week 13 adds a topology-guided verifier for the specific semantic ambiguity between `no_damage` and `minor_damage`. Week 14 adds a CrisisMMD v2 Twitter module for text-based crisis understanding, humanitarian reasoning, damage-severity proxy modeling, and emotion-aware report generation.
+The project begins with binary building segmentation, where the model learns whether each pixel belongs to a labeled building or background. It then extends the same pipeline into multiclass damage segmentation, temporal Siamese modeling, class-imbalance handling, and multi-task learning. In the early models, the pre-disaster and post-disaster images are stacked together as a 6-channel input. In the later Siamese models, the two images are processed as separate RGB streams and fused at the feature level. Week 11 transitions from dense pixel-level segmentation to object-level building damage classification. Week 12 extends that transition into embedding-centric building-level representation learning. Week 13 adds a topology-guided verifier for the specific semantic ambiguity between `no_damage` and `minor_damage`. Week 14 adds a CrisisMMD v2 Twitter module for text-based crisis understanding, humanitarian reasoning, damage-severity proxy modeling, and emotion-aware report generation. Weeks 15-17 fuse the vision, topology, and NLP branches into an event knowledge base, prepare retrieval-ready event documents, and generate disaster situation reports.
 
-The current pipeline is divided into fourteen development stages:
+The current pipeline is divided into seventeen development stages:
 
 1. Week 1: Data exploration, preprocessing, visualization, and mask generation
 2. Week 2: Dataset pipeline, train/validation/test splits, and the first baseline U-Net
@@ -29,6 +29,9 @@ The current pipeline is divided into fourteen development stages:
 12. Week 12: Advanced object-level representation learning for semantic damage separability
 13. Week 13: Topology-guided semantic calibration for no-damage/minor-damage ambiguity
 14. Week 14: CrisisMMD v2 social-media crisis understanding and emotion-aware humanitarian context
+15. Week 15: Multi-source event fusion into a unified disaster representation
+16. Week 16: Retrieval-ready event document construction for RAG
+17. Week 17: LLM-assisted disaster situation report generation
 
 ## Week 1: Preprocessing and Data Understanding
 
@@ -2791,6 +2794,22 @@ results/week14_crisismmd/processed/emotion.csv
 
 This keeps emotion detection publishable as a weak-supervision experiment rather than treating raw LLM outputs as unquestioned ground truth.
 
+The first emotion pseudo-labeling run produced:
+
+```text
+total pseudo-labels: 2667
+train:               2132
+val:                  535
+
+Neutral: 939
+Fear:    643
+Hope:    529
+Sadness: 473
+Anger:    83
+```
+
+This distribution is usable for a first emotion baseline, but it remains imbalanced. `Anger` is the smallest class and therefore the most likely to be unstable.
+
 ### Week 14 Training and Metrics
 
 The text classifier script uses Hugging Face transformer models. The intended model for the final emotion classifier is:
@@ -2824,6 +2843,7 @@ Task                  Best epoch   Accuracy   Macro F1   Weighted F1
 Informativeness       2            0.7973     0.7032     0.7852
 Humanitarian          1            0.6721     0.4708     0.6630
 Damage severity       3            0.8424     0.3324     0.7860
+Emotion               2            0.7178     0.7221     0.7166
 ```
 
 The informativeness classifier is the strongest Week 14 baseline. This is expected because it is a binary task with substantially more stable textual cues.
@@ -2831,6 +2851,8 @@ The informativeness classifier is the strongest Week 14 baseline. This is expect
 The humanitarian classifier is harder because it is an eight-class task with severe class imbalance. The event-held-out validation split contains very small minority classes such as `vehicle_damage` and `missing_or_found_people`, so macro F1 is much lower than weighted F1. The best humanitarian run used weighted cross-entropy with square-root class weighting rather than aggressive focal loss.
 
 The damage-severity proxy task reaches high accuracy and weighted F1, but macro F1 remains low. This suggests the model is learning the dominant severity pattern while still struggling with minority severity classes. This is an important limitation because the `image_damage` label is used as a text-only proxy target rather than a direct text annotation.
+
+The emotion classifier achieves the strongest macro F1 among the Week 14 multi-class tasks. This result should be interpreted as a pseudo-label learning result rather than a manually annotated benchmark, because the ground-truth emotion labels were generated by an LLM and filtered by confidence/agreement rules.
 
 The first focal-loss humanitarian run collapsed because the smallest classes were extremely rare:
 
@@ -2880,9 +2902,238 @@ The main research contribution is that the final system is not only a damage cla
 
 This makes Week 14 an important bridge from image-based damage detection toward practical disaster-response intelligence.
 
+## Week 15: Multi-Source Event Fusion
+
+Week 15 creates one unified event representation from the three branches developed so far:
+
+```text
+Vision Branch:
+pre-disaster image + post-disaster image -> satellite damage counts
+
+Topology Branch:
+structural topology signals -> validation and confidence
+
+NLP Branch:
+CrisisMMD posts -> informativeness, humanitarian topics, and emotions
+```
+
+The implementation is located in:
+
+```text
+src/week15/week15_fuse_event.py
+```
+
+The script accepts separate JSON outputs from the satellite model, topology verifier, and social-media classifiers, then writes one event-level JSON file. The event name is a user-defined identifier; `example_event` below can be replaced by any disaster/event key used in the experiment:
+
+```text
+python src\week15\week15_fuse_event.py --event example_event --output results\week15_fusion\example_event.json
+```
+
+The resulting event object is the project knowledge-base unit:
+
+```json
+{
+  "event": "example_event",
+  "satellite_assessment": {
+    "destroyed": 12,
+    "major": 35,
+    "minor": 48,
+    "total_damaged": 95,
+    "confidence": 0.87
+  },
+  "topology_validation": {
+    "validated": true,
+    "confidence": 0.81,
+    "role": "calibration_validation_anomaly_detection"
+  },
+  "social_media": {
+    "informative_posts": 834,
+    "humanitarian": {
+      "infrastructure_damage": 210,
+      "affected_people": 155,
+      "rescue_efforts": 94,
+      "injured_dead": 42
+    },
+    "emotion": {
+      "fear": 215,
+      "hope": 71,
+      "anger": 34,
+      "sadness": 89
+    }
+  }
+}
+```
+
+This is the correct role for topology after Week 13. The Week 13 experiment showed that topology should not be treated as a standalone four-class damage classifier. In Week 15, it becomes a calibration, anomaly-detection, and validation signal that supports the stronger satellite and social-media branches.
+
+### Week 15 Input Exporters
+
+Before fusion, each branch exports a compact JSON file.
+
+The vision branch uses the preferred Week 12 model from the report:
+
+```text
+results/week12/week12_convnext_tiny_gated_effective_no_sampler/checkpoints/week12_convnext_tiny_gated_ce_best.pt
+```
+
+This model is preferred because gated ConvNeXt-Tiny gives the strongest `minor_damage` F1, which is the central scientific bottleneck for the project.
+
+Export satellite damage counts:
+
+```text
+python src\week12\week12_export_satellite_counts.py --dataset-root data\week11_buildings_week8_extra --checkpoint results\week12\week12_convnext_tiny_gated_effective_no_sampler\checkpoints\week12_convnext_tiny_gated_ce_best.pt --split val --output-json results\week15_inputs\satellite.json
+```
+
+The exported file contains predicted counts for:
+
+```text
+no_damage
+minor
+major
+destroyed
+total_damaged
+confidence
+```
+
+Export topology validation:
+
+```text
+python src\week13\week13_export_topology_validation.py --threshold-json results\week13_topology\threshold\topology_threshold.json --hybrid-metrics-json results\week13_topology\hybrid\metrics\hybrid_metrics.json --output-json results\week15_inputs\topology.json
+```
+
+The exported file contains:
+
+```text
+validated
+topology_confidence
+role
+topology_threshold_metrics
+hybrid_summary
+```
+
+Export CrisisMMD social-media aggregate counts:
+
+```text
+python src\week14\week14_export_social_counts.py --processed-dir results\week14_crisismmd\processed --split val --output-json results\week15_inputs\social.json
+```
+
+The exported file contains:
+
+```text
+informative_posts
+humanitarian counts
+emotion counts, when emotion.csv exists
+representative_posts
+```
+
+After these three files exist, the fusion command becomes:
+
+```text
+python src\week15\week15_fuse_event.py --event example_event --satellite-json results\week15_inputs\satellite.json --topology-json results\week15_inputs\topology.json --social-json results\week15_inputs\social.json --output results\week15_fusion\example_event.json
+```
+
+## Week 16: Retrieval Layer for RAG
+
+Week 16 converts each fused event into a retrieval-ready document instead of feeding raw tweets or raw model outputs directly to an LLM.
+
+The implementation is located in:
+
+```text
+src/week16/week16_build_event_documents.py
+```
+
+Example command:
+
+```text
+python src\week16\week16_build_event_documents.py --event-json results\week15_fusion\example_event.json --output-jsonl results\week16_rag\event_documents.jsonl
+```
+
+Each JSONL row contains:
+
+- a stable event ID
+- a compact text document for embedding or retrieval
+- metadata summaries for satellite damage, topology validation, humanitarian topics, and emotions
+- the original fused payload
+
+The default output is intentionally vector-database neutral:
+
+```text
+results/week16_rag/event_documents.jsonl
+```
+
+This file can be loaded into FAISS, ChromaDB, Qdrant, or any other retrieval backend. The important design choice is that retrieval operates over event summaries, not thousands of raw posts. This keeps the LLM context smaller, more reliable, and easier to audit.
+
+## Week 17: LLM Situation Report Generator
+
+Week 17 generates a disaster situation report from the fused event representation or a Week 16 retrieval document.
+
+The implementation is located in:
+
+```text
+src/week17/week17_generate_situation_report.py
+```
+
+The generator supports two modes:
+
+- deterministic template generation, which works without external services
+- optional Ollama generation with Llama 3, Qwen, Mistral, or another locally available model
+
+Example template run:
+
+```text
+python src\week17\week17_generate_situation_report.py --input-json results\week15_fusion\example_event.json --output-md results\week17_reports\example_event.md
+```
+
+The same generator can also read the Week 16 JSONL document store:
+
+```text
+python src\week17\week17_generate_situation_report.py --input-json results\week16_rag\event_documents.jsonl --event example_event --output-md results\week17_reports\example_event.md
+```
+
+Example Ollama run:
+
+```text
+python src\week17\week17_generate_situation_report.py --input-json results\week15_fusion\example_event.json --output-md results\week17_reports\example_event.md --use-ollama --ollama-model llama3
+```
+
+The report prompt asks the model to include:
+
+```text
+1. Physical damage assessment
+2. Humanitarian impact
+3. Public sentiment
+4. Recommended priorities
+5. Confidence assessment
+```
+
+The final system pipeline is therefore:
+
+```text
+Satellite xBD Damage Model
+   |
+   +-- destroyed / major / minor counts
+   |
+Topology Validation
+   |
+   +-- validation confidence and anomaly signal
+   |
+CrisisMMD Text Classifiers
+   |
+   +-- informativeness, humanitarian labels, emotions
+   |
+   v
+Unified Event Knowledge Base
+   |
+   v
+Retrieval-Ready Event Documents
+   |
+   v
+LLM Situation Report
+```
+
 ## Future Extensions
 
-After Week 14, the next improvements should focus on deployment realism and richer multi-source evaluation:
+After Week 17, the next improvements should focus on deployment realism and richer multi-source evaluation:
 
 - Replace ground-truth object masks with predicted segmentation masks to test deployment realism.
 - Add disaster-type performance breakdowns for each final model.
@@ -2891,4 +3142,5 @@ After Week 14, the next improvements should focus on deployment realism and rich
 - Add larger contextual crops, adaptive crop scaling, or oriented bounding boxes for subtle damage cues near building boundaries.
 - Explore patch-level temporal transformers only after the topology verifier has been compared against the gated ConvNeXt baseline.
 - Evaluate the Week 14 classifiers under both official CrisisMMD splits and event-held-out splits.
-- Add a RAG report-generation stage that consumes satellite predictions, topology summaries, humanitarian predictions, and emotion labels together.
+- Add a persistent vector database backend such as FAISS, ChromaDB, or Qdrant for multi-event retrieval.
+- Evaluate generated situation reports against expert-written reports for factuality, prioritization quality, and uncertainty calibration.
