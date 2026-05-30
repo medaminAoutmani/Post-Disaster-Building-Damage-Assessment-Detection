@@ -110,6 +110,18 @@ def label_batch(host: str, model: str, rows: list[dict], timeout: int) -> list[d
     return ordered
 
 
+def label_rows_with_fallback(host: str, model: str, rows: list[dict], timeout: int) -> list[dict[str, str | float]]:
+    try:
+        return label_batch(host, model, rows, timeout)
+    except Exception:
+        if len(rows) == 1:
+            raise
+    labels = []
+    for row in rows:
+        labels.extend(label_batch(host, model, [row], timeout))
+    return labels
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Week 14: generate local Ollama emotion pseudo-labels.")
     parser.add_argument("--prompts-jsonl", type=Path, default=Path("results") / "week14_crisismmd" / "processed" / "emotion_prompts.jsonl")
@@ -137,7 +149,7 @@ def main() -> None:
         last_error = None
         for attempt in range(1, args.retries + 1):
             try:
-                labels = label_batch(args.host, args.model, rows, args.timeout)
+                labels = label_rows_with_fallback(args.host, args.model, rows, args.timeout)
                 for row, label in zip(rows, labels):
                     payload = {
                         "tweet_id": str(row["tweet_id"]),
