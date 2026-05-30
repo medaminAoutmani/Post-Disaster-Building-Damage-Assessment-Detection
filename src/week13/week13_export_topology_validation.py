@@ -8,6 +8,23 @@ from pathlib import Path
 from typing import Any
 
 
+DEFAULT_THRESHOLD_PATHS = [
+    Path("results") / "week13_topology" / "threshold" / "topology_threshold.json",
+    Path("results") / "week13" / "week13_topology" / "threshold" / "topology_threshold.json",
+]
+DEFAULT_HYBRID_PATHS = [
+    Path("results") / "week13_topology" / "hybrid" / "metrics" / "hybrid_metrics.json",
+    Path("results") / "week13" / "week13_topology" / "hybrid" / "metrics" / "hybrid_metrics.json",
+]
+
+
+def first_existing(paths: list[Path]) -> Path:
+    for path in paths:
+        if path.exists():
+            return path
+    return paths[0]
+
+
 def read_json(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
@@ -16,8 +33,8 @@ def read_json(path: Path) -> dict[str, Any]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Week 13: export topology validation signal for Week 15 fusion.")
-    parser.add_argument("--threshold-json", type=Path, default=Path("results") / "week13_topology" / "threshold" / "topology_threshold.json")
-    parser.add_argument("--hybrid-metrics-json", type=Path, default=Path("results") / "week13_topology" / "hybrid" / "metrics" / "hybrid_metrics.json")
+    parser.add_argument("--threshold-json", type=Path, default=first_existing(DEFAULT_THRESHOLD_PATHS))
+    parser.add_argument("--hybrid-metrics-json", type=Path, default=first_existing(DEFAULT_HYBRID_PATHS))
     parser.add_argument("--output-json", type=Path, default=Path("results") / "week15_inputs" / "topology.json")
     parser.add_argument("--min-confidence", type=float, default=0.50)
     args = parser.parse_args()

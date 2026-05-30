@@ -3011,10 +3011,16 @@ topology_threshold_metrics
 hybrid_summary
 ```
 
+In the current workspace, the Week 13 outputs are stored under `results/week13/week13_topology`. The equivalent command is:
+
+```text
+python src\week13\week13_export_topology_validation.py --threshold-json results\week13\week13_topology\threshold\topology_threshold.json --hybrid-metrics-json results\week13\week13_topology\hybrid\metrics\hybrid_metrics.json --output-json results\week15_inputs\topology.json
+```
+
 Export CrisisMMD social-media aggregate counts:
 
 ```text
-python src\week14\week14_export_social_counts.py --processed-dir results\week14_crisismmd\processed --split val --output-json results\week15_inputs\social.json
+python src\week14\week14_export_social_counts.py --processed-dir results\week14_crisismmd\processed --split val --output-json results\week15_inputs\social_val.json
 ```
 
 The exported file contains:
@@ -3029,7 +3035,7 @@ representative_posts
 After these three files exist, the fusion command becomes:
 
 ```text
-python src\week15\week15_fuse_event.py --event example_event --satellite-json results\week15_inputs\satellite.json --topology-json results\week15_inputs\topology.json --social-json results\week15_inputs\social.json --output results\week15_fusion\example_event.json
+python src\week15\week15_fuse_event.py --event example_event --satellite-json results\week15_inputs\satellite.json --topology-json results\week15_inputs\topology.json --social-json results\week15_inputs\social_val.json --output results\week15_fusion\example_event.json
 ```
 
 ## Week 16: Retrieval Layer for RAG
