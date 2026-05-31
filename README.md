@@ -1,5 +1,7 @@
 # Post-Disaster Building Damage Assessment
 
+[![Documentation Status](https://readthedocs.org/projects/post-disaster-building-damage-assessment-detection/badge/?version=latest)](https://post-disaster-building-damage-assessment-detection.readthedocs.io/en/latest/)
+
 This project combines satellite-image building damage classification, topology-based validation, and social-media disaster understanding into a fused situation-report pipeline.
 
 For the full methodology, experiments, results, and week-by-week narrative, see [PROJECT_REPORT.md](PROJECT_REPORT.md).
