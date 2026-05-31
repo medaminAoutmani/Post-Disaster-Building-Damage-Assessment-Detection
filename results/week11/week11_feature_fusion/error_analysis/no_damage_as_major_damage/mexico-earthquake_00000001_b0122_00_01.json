@@ -1,0 +1,7 @@
+{
+  "building_id": "mexico-earthquake_00000001_b0122_00_01",
+  "true_class": "no_damage",
+  "predicted_class": "major_damage",
+  "confidence": 0.46829894185066223,
+  "correct": false
+}

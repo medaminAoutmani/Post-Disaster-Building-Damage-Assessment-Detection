@@ -1,0 +1,27 @@
+{
+  "study_name": "morocco_resnet50_unet_hpo",
+  "best_trial": 3,
+  "best_value": 0.3774133205413818,
+  "best_params": {
+    "encoder_lr": 0.00028325734588543713,
+    "decoder_lr": 0.0008129702163604196,
+    "loss": "cross_entropy_dice",
+    "sampler": "weighted",
+    "scheduler": "reduce_on_plateau",
+    "batch_size": 4,
+    "minor_class_weight": 1.4323335332729514,
+    "major_class_weight": 2.817887932741608,
+    "destroyed_class_weight": 2.301194607934551
+  },
+  "best_user_attrs": {
+    "experiment_dir": "results/week6/experiment_resnet50_optuna_trial_003",
+    "objective": 0.3774133205413818,
+    "val_macro_f1": 0.3353385329246521,
+    "val_mean_dice": 0.3353384733200073,
+    "val_rare_class_recall": 0.2804989814758301
+  },
+  "hpo_epochs": 6,
+  "hpo_max_train_samples": 2000,
+  "hpo_max_val_samples": 500,
+  "objective": "val_mean_dice + 0.15 * val_rare_class_recall"
+}

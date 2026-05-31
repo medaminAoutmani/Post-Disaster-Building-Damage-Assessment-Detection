@@ -1,0 +1,27 @@
+﻿{
+    "source":  "week14_crisismmd_raw_annotations",
+    "processed_dir":  "data/CrisisMMD_v2.0/annotations",
+    "split":  "val",
+    "event":  "mexico_earthquake",
+    "informative_posts":  922,
+    "humanitarian":  {
+                         "injured_dead":  110,
+                         "rescue_efforts":  283,
+                         "infrastructure_damage":  87,
+                         "other_relevant_information":  404,
+                         "vehicle_damage":  2,
+                         "missing_or_found_people":  11,
+                         "affected_people":  25
+                     },
+    "emotion":  {
+
+                },
+    "representative_posts":  [
+                                 "Mexico earthquake: Many children killed at primary school https://t.co/h0uPkN13mH https://t.co/0vGA5lj758",
+                                 "RT @AmichaiStein1: #BREAKING: Israel search \u0026amp; rescue mission headed to Mexico after 7.1M earthquake https://t.co/lSd0e5ZVdx",
+                                 "NEWS: At least 200 people, including 21 children, have died in Mexico after an earthquake hit the country. https://t.co/Wzp6DSKdTs",
+                                 "RT @TravelLeisure: Deadly earthquake shakes Mexico City, causes buildings to crumble https://t.co/Ad7BYyR1b6 https://t.co/3Qu2wvMbWu",
+                                 "RT @Jentezen: We are praying for all the people in Mexico who are suffering from the earthquake. https://t.co/y55ZqWuOzX"
+                             ],
+    "note":  "Emotion counts are empty because results/week14_crisismmd/processed/emotion.csv is not present in this workspace."
+}

@@ -1,0 +1,27 @@
+{ 
+    "study_name": "morocco_deeplabv3_hpo",
+    "best_trial": 10,
+    "best_value": 0.36559649258852006,
+    "best_params": { 
+        "encoder_lr": 1.2512834461742543e-05,
+        "decoder_lr": 0.00027140935347148127,
+        "loss": "tversky",
+        "sampler": "shuffle", 
+        "scheduler": "warmup_cosine", 
+        "batch_size": 4, 
+        "minor_class_weight": 1.13568024246363, 
+        "major_class_weight": 1.2112918943179287, 
+        "destroyed_class_weight": 2.0786377163420924 
+    }, 
+    "best_user_attrs": { 
+        "experiment_dir": "results/week6/experiment_deeplabv3_optuna_trial_010", 
+        "objective": 0.36559649258852006, 
+        "val_macro_f1": 0.3209969997406006, 
+        "val_mean_dice": 0.32099461555480957, 
+        "val_rare_class_recall": 0.2973458468914032 
+    }, 
+    "hpo_epochs": 6, 
+    "hpo_max_train_samples": 2000, 
+    "hpo_max_val_samples": 500, 
+    "objective": "val_mean_dice + 0.15 * val_rare_class_recall" 
+}

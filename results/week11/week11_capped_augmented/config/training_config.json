@@ -1,0 +1,49 @@
+{
+  "dataset_root": "data/week11_buildings",
+  "model": "SiameseBuildingClassifier",
+  "encoder": "ResNet18",
+  "fusion": "concat(pre, post, diff, abs(pre-post)) embeddings",
+  "loss": "CrossEntropyLoss",
+  "class_weight_mode": "effective",
+  "loss_weights": [
+    0.32187750935554504,
+    1.320871114730835,
+    2.02233624458313,
+    0.3349151313304901
+  ],
+  "weighted_sampler": true,
+  "augment_train": true,
+  "max_train_per_class": [
+    5000,
+    -1,
+    -1,
+    3091
+  ],
+  "seed": 42,
+  "class_names": [
+    "no_damage",
+    "minor_damage",
+    "major_damage",
+    "destroyed"
+  ],
+  "train_class_counts": {
+    "no_damage": 5000,
+    "minor_damage": 277,
+    "major_damage": 172,
+    "destroyed": 3091
+  },
+  "val_class_counts": {
+    "no_damage": 11136,
+    "minor_damage": 68,
+    "major_damage": 49,
+    "destroyed": 1243
+  },
+  "batch_size": 32,
+  "epochs": 25,
+  "lr": 0.0003,
+  "weight_decay": 0.0001,
+  "pretrained": false,
+  "device": "cuda",
+  "train_samples": 8540,
+  "val_samples": 12496
+}

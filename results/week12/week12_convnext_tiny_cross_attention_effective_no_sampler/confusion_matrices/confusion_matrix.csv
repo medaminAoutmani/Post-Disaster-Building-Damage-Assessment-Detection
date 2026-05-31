@@ -1,0 +1,5 @@
+actual/predicted,no_damage,minor_damage,major_damage,destroyed
+no_damage,10797,28,11,300
+minor_damage,52,3,3,10
+major_damage,15,4,19,11
+destroyed,60,0,8,1175

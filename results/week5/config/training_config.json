@@ -1,0 +1,37 @@
+{
+  "batch_size": 4,
+  "class_names": [
+    "background",
+    "no_damage",
+    "minor_damage",
+    "major_damage",
+    "destroyed"
+  ],
+  "class_weights": [
+    1.0,
+    0.2,
+    1.5,
+    1.7,
+    1.8
+  ],
+  "data_dir": "data",
+  "decoder_learning_rate": 0.0003,
+  "device": "cuda",
+  "encoder": "ResNet34",
+  "encoder_learning_rate": 0.0001,
+  "epochs": 20,
+  "freeze_encoder": false,
+  "image_size": 512,
+  "loss": "CrossEntropy + multiclass Dice",
+  "max_train_samples": null,
+  "max_val_samples": null,
+  "model": "DamageResNet34UNet",
+  "normalization": "ImageNet mean/std duplicated for pre and post RGB",
+  "num_workers": 0,
+  "optimizer": "AdamW",
+  "output_channels": 5,
+  "overfit_samples": null,
+  "pretrained": true,
+  "split_dir": "splits",
+  "target_mode": "multiclass"
+}

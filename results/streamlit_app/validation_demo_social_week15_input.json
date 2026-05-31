@@ -1,0 +1,28 @@
+{
+  "source": "streamlit_zero_shot:MoritzLaurer/deberta-v3-base-zeroshot-v2.0",
+  "split": "streamlit",
+  "event": "validation_demo",
+  "classified_posts": 1,
+  "informative_posts": 1,
+  "emotion": {
+    "fear": 1
+  },
+  "disaster_type": {
+    "flood": 1
+  },
+  "included_tweets": [
+    {
+      "tweet_id": "included_tweet_1",
+      "tweet_text": "Why are the dams releasing water now without giving residents a proper evacuation notice? This is structural negligence, not just a natural disaster! \ufffd",
+      "emotion": "fear",
+      "emotion_display": "Fear",
+      "emotion_confidence": 0.958202,
+      "disaster_type": "flood",
+      "disaster_type_display": "flood",
+      "disaster_type_confidence": 0.941619
+    }
+  ],
+  "representative_posts": [
+    "Why are the dams releasing water now without giving residents a proper evacuation notice? This is structural negligence, not just a natural disaster! \ufffd"
+  ]
+}

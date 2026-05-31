@@ -1,0 +1,23 @@
+data_dir: data
+split_dir: splits
+image_size: 512
+batch_size: 4
+epochs: 20
+optimizer: AdamW
+encoder_learning_rate: 0.0001
+decoder_learning_rate: 0.0003
+loss: CrossEntropy + multiclass Dice
+class_names: [background, no_damage, minor_damage, major_damage, destroyed]
+class_weights: [1.0, 0.2, 1.5, 1.7, 1.8]
+model: DamageResNet34UNet
+encoder: ResNet34
+output_channels: 5
+pretrained: True
+freeze_encoder: False
+normalization: ImageNet mean/std duplicated for pre and post RGB
+num_workers: 0
+max_train_samples: null
+max_val_samples: null
+overfit_samples: null
+target_mode: multiclass
+device: cuda

@@ -1,0 +1,27 @@
+{
+  "study_name": "morocco_week6_hpo",
+  "best_trial": 4,
+  "best_value": 0.2630850948393345,
+  "best_params": {
+    "encoder_lr": 0.00014846545205351926,
+    "decoder_lr": 0.00041556206637071813,
+    "loss": "focal_tversky",
+    "sampler": "weighted",
+    "scheduler": "warmup_cosine",
+    "batch_size": 2,
+    "minor_class_weight": 2.3690076810000367,
+    "major_class_weight": 1.6557557975075385,
+    "destroyed_class_weight": 1.8413882464806242
+  },
+  "best_user_attrs": {
+    "experiment_dir": "results/week6/experiment_attention_unet_optuna_trial_004",
+    "objective": 0.2630850948393345,
+    "val_macro_f1": 0.23426353931427002,
+    "val_mean_dice": 0.23426306247711182,
+    "val_rare_class_recall": 0.1921468824148178
+  },
+  "hpo_epochs": 6,
+  "hpo_max_train_samples": 2000,
+  "hpo_max_val_samples": 500,
+  "objective": "val_mean_dice + 0.15 * val_rare_class_recall"
+}

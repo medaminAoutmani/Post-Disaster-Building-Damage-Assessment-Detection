@@ -1,0 +1,40 @@
+{
+  "experiment": "multitask_cbam_difference",
+  "fusion": "difference",
+  "attention": "cbam",
+  "epochs": 50,
+  "scheduler": "warmup_cosine",
+  "encoder_lr": 0.0001,
+  "fusion_lr": 0.0003,
+  "decoder_lr": 0.0005,
+  "damage_loss": "soft_building_weighted_focal",
+  "damage_class_weights": null,
+  "building_class_weights": [
+    1.0,
+    10.0
+  ],
+  "sampler": "shuffle",
+  "week10b_trial": "a",
+  "week10b_loss": "ce_dice",
+  "lambda_pre": 1.0,
+  "lambda_post": 1.0,
+  "lambda_damage": 3.0,
+  "grad_clip_norm": 1.0,
+  "use_week8_extra": false,
+  "environment": {
+    "git_commit": "a57c10dbe3a0b475b2ab781837b90031e7c76927",
+    "python": "3.12.11",
+    "platform": "Linux-6.8.0-1024-aws-x86_64-with-glibc2.39",
+    "pytorch": "2.8.0+cu128",
+    "cuda_available": true,
+    "cuda_version": "12.8",
+    "cudnn_version": 91002,
+    "created_unix_time": 1779866253.9747896,
+    "gpu_count": 1,
+    "gpu_names": [
+      "Tesla T4"
+    ],
+    "parameter_count": 47016811,
+    "trainable_parameter_count": 47016811
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "study_name": "morocco_unetplusplus_hpo",
+  "best_trial": 2,
+  "best_value": 0.27589436173439025,
+  "best_params": {
+    "encoder_lr": 0.00020474675123843619,
+    "decoder_lr": 6.672420364164472e-05,
+    "loss": "focal_tversky",
+    "sampler": "weighted",
+    "scheduler": "warmup_cosine",
+    "batch_size": 2,
+    "minor_class_weight": 1.7496237861415098,
+    "major_class_weight": 1.7698484319742742,
+    "destroyed_class_weight": 2.28215511737878
+  },
+  "best_user_attrs": {
+    "experiment_dir": "results/week6/experiment_unetplusplus_optuna_trial_002",
+    "objective": 0.27589436173439025,
+    "val_macro_f1": 0.23248808085918427,
+    "val_mean_dice": 0.2324848473072052,
+    "val_rare_class_recall": 0.2893967628479004
+  },
+  "hpo_epochs": 6,
+  "hpo_max_train_samples": 2000,
+  "hpo_max_val_samples": 500,
+  "objective": "val_mean_dice + 0.15 * val_rare_class_recall"
+}

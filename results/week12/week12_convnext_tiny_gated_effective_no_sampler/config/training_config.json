@@ -1,0 +1,37 @@
+{
+  "week": 12,
+  "goal": "embedding-centric object-level damage representation learning",
+  "dataset_root": "data/week11_buildings_week8_extra",
+  "backbone": "convnext_tiny",
+  "fusion": "gated",
+  "loss_type": "ce",
+  "embedding_dim": 256,
+  "class_weight_mode": "effective",
+  "weighted_sampler": false,
+  "augment_train": true,
+  "max_train_per_class": [
+    5000,
+    -1,
+    -1,
+    3091
+  ],
+  "class_names": [
+    "no_damage",
+    "minor_damage",
+    "major_damage",
+    "destroyed"
+  ],
+  "train_class_counts": {
+    "no_damage": 5000,
+    "minor_damage": 4324,
+    "major_damage": 2938,
+    "destroyed": 3091
+  },
+  "val_class_counts": {
+    "no_damage": 11136,
+    "minor_damage": 68,
+    "major_damage": 49,
+    "destroyed": 1243
+  },
+  "device": "cuda"
+}

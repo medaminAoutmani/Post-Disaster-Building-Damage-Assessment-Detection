@@ -1,0 +1,31 @@
+{
+  "experiment": "siamese_cbam",
+  "model": "siamese_attention_unet",
+  "fusion": "difference",
+  "attention": "cbam",
+  "loss": "cross_entropy_dice",
+  "sampler": "weighted",
+  "scheduler": "reduce_on_plateau",
+  "lr": 0.0002,
+  "encoder_lr": 0.00028325734588543713,
+  "fusion_lr": 0.0003,
+  "decoder_lr": 0.0008129702163604196,
+  "epochs": 20,
+  "morocco_adaptation": true,
+  "environment": {
+    "git_commit": "43f885ed608143b56bffb11ad3ba8bc7477a1d43",
+    "python": "3.12.11",
+    "platform": "Linux-6.8.0-1024-aws-x86_64-with-glibc2.39",
+    "pytorch": "2.8.0+cu128",
+    "cuda_available": true,
+    "cuda_version": "12.8",
+    "cudnn_version": 91002,
+    "created_unix_time": 1779627176.1896148,
+    "gpu_count": 1,
+    "gpu_names": [
+      "Tesla T4"
+    ],
+    "parameter_count": 70524711,
+    "trainable_parameter_count": 70524711
+  }
+}

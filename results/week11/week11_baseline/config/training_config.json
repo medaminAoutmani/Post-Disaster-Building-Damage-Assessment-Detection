@@ -1,0 +1,21 @@
+{
+  "dataset_root": "data/week11_buildings",
+  "model": "SiameseBuildingClassifier",
+  "encoder": "ResNet18",
+  "fusion": "concat(pre, post, diff, abs(pre-post)) embeddings",
+  "loss": "CrossEntropyLoss",
+  "class_names": [
+    "no_damage",
+    "minor_damage",
+    "major_damage",
+    "destroyed"
+  ],
+  "batch_size": 32,
+  "epochs": 20,
+  "lr": 0.0003,
+  "weight_decay": 0.0001,
+  "pretrained": false,
+  "device": "cuda",
+  "train_samples": 44395,
+  "val_samples": 12496
+}

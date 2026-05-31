@@ -1,0 +1,6 @@
+truth/prediction,background,no_damage,minor_damage,major_damage,destroyed
+background,36094972,716277,0,0,83439
+no_damage,478250,2601736,0,0,7516
+minor_damage,3524,12780,0,0,757
+major_damage,2367,8685,0,0,3514
+destroyed,45410,2837,0,0,308112

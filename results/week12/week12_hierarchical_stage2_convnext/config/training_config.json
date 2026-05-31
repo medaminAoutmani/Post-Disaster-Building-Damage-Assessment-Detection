@@ -1,0 +1,26 @@
+{
+  "dataset_root": "data/week11_buildings_week8_extra",
+  "results_dir": "results/week12/week12_hierarchical_stage2_convnext",
+  "backbone": "convnext_tiny",
+  "fusion": "gated",
+  "embedding_dim": 256,
+  "batch_size": 32,
+  "epochs": 25,
+  "lr": 0.0003,
+  "weight_decay": 0.0001,
+  "num_workers": 0,
+  "pretrained": false,
+  "augment_train": true,
+  "weighted_sampler": true,
+  "seed": 42,
+  "class_names": [
+    "minor_damage",
+    "major_damage",
+    "destroyed"
+  ],
+  "train_class_counts": [
+    4324.0,
+    2938.0,
+    3268.0
+  ]
+}

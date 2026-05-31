@@ -1,0 +1,42 @@
+{
+  "event": "validation_demo",
+  "created_at_utc": "2026-05-31T11:22:33.582290+00:00",
+  "satellite_assessment": {
+    "destroyed": 0,
+    "major": 1,
+    "minor": 0,
+    "total_damaged": 1,
+    "confidence": 0.5388965606689453
+  },
+  "social_media": {
+    "informative_posts": 1,
+    "humanitarian": {},
+    "emotion": {
+      "fear": 1
+    },
+    "disaster_type": {
+      "flood": 1
+    },
+    "representative_posts": [
+      "Why are the dams releasing water now without giving residents a proper evacuation notice? This is structural negligence, not just a natural disaster! \ufffd"
+    ],
+    "classified_posts": 1,
+    "included_tweets": [
+      {
+        "tweet_id": "included_tweet_1",
+        "tweet_text": "Why are the dams releasing water now without giving residents a proper evacuation notice? This is structural negligence, not just a natural disaster! \ufffd",
+        "emotion": "fear",
+        "emotion_display": "Fear",
+        "emotion_confidence": 0.958202,
+        "disaster_type": "flood",
+        "disaster_type_display": "flood",
+        "disaster_type_confidence": 0.941619
+      }
+    ]
+  },
+  "source_files": {
+    "satellite_source": "Upload building crop pairs",
+    "social_source": "Paste/upload tweets + DeBERTa zero-shot",
+    "social_json": "results\\streamlit_app\\validation_demo_social_week15_input.json"
+  }
+}

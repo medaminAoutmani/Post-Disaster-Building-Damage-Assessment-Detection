@@ -5,20 +5,10 @@ data/
 *.7z
 *.rar
 
-results/
+# Result folders and generated model artifacts are committed.
 
-# Training outputs and generated artifacts
-results/**/checkpoints/
-results/**/predictions/
-results/**/masks/
-results/**/visualizations/
-results/**/confusion_matrices/*.png
-*.pt
-*.pth
-*.ckpt
-
-# Keep lightweight report/log CSV files if you choose to commit them.
-# Uncomment the next line if you want to ignore every generated output.
+# Keep lightweight report/log CSV/JSON files committed under results/.
+# Uncomment the next line if you want to ignore every generated output again.
 # results/
 
 # Python caches

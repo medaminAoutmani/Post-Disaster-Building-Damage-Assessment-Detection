@@ -1,0 +1,16 @@
+{
+  "best_epoch": 5,
+  "val_loss": 0.1953850887677706,
+  "accuracy": 0.9297375082969666,
+  "macro_f1": 0.8520143628120422,
+  "precision_no_damage": 0.9924154877662659,
+  "recall_no_damage": 0.9282507300376892,
+  "f1_no_damage": 0.9592612981796265,
+  "support_no_damage": 11136.0,
+  "predicted_no_damage": 10416.0,
+  "precision_damaged": 0.6158654093742371,
+  "recall_damaged": 0.9419117569923401,
+  "f1_damaged": 0.744767427444458,
+  "support_damaged": 1360.0,
+  "predicted_damaged": 2080.0
+}
