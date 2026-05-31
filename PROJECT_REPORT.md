@@ -3104,6 +3104,33 @@ Retrieval-Ready Event Documents
 LLM Situation Report
 ```
 
+### Streamlit Application
+
+The final user-facing prototype is implemented in:
+
+```text
+streamlit_app.py
+```
+
+Run it with:
+
+```text
+streamlit run streamlit_app.py
+```
+
+The application supports:
+
+- manual satellite damage counts
+- upload of a satellite JSON file
+- upload of pre/post object-level building crop pairs for inference with the preferred Week 12 gated ConvNeXt-Tiny checkpoint
+- pasted or uploaded tweets
+- upload of a prepared social-media JSON file
+- fused event JSON generation
+- retrieval document generation
+- disaster situation report generation
+
+The important deployment constraint is that the preferred Week 12 model is an object-level building classifier. It expects aligned pre-disaster and post-disaster building crops, not raw full-scene satellite images. Full-scene xBD imagery must first pass through building extraction before model-based damage counting. For full-scene demonstrations, the app therefore also supports manual counts or a precomputed satellite JSON file.
+
 ## Future Extensions
 
 After Week 17, the next improvements should focus on deployment realism and richer multi-source evaluation:

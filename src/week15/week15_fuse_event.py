@@ -31,15 +31,6 @@ def normalize_satellite(payload: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-def normalize_topology(payload: dict[str, Any]) -> dict[str, Any]:
-    confidence = payload.get("confidence", payload.get("topology_confidence", 0.0))
-    return {
-        "validated": bool(payload.get("validated", False)),
-        "confidence": float(confidence),
-        "role": payload.get("role", "calibration_validation_anomaly_detection"),
-    }
-
-
 def normalize_social(payload: dict[str, Any]) -> dict[str, Any]:
     humanitarian = dict(payload.get("humanitarian", {}))
     emotion = dict(payload.get("emotion", payload.get("emotions", {})))

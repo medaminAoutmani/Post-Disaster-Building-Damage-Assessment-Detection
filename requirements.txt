@@ -12,3 +12,4 @@ sentencepiece
 protobuf
 openai
 google-genai
+streamlit
