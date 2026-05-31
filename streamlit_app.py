@@ -341,6 +341,11 @@ with st.sidebar:
     topology_config_path = ROOT / topology_path
     enable_topology = st.checkbox("Validate uploaded crop predictions with topology", value=topology_config_path.exists())
     topology_thresholds = st.number_input("Topology thresholds", min_value=4, max_value=64, value=16, step=4)
+    st.caption(
+        "Topology is a validation/agreement signal, not the main classifier. "
+        "It is most useful when damage creates visible structural or topological change; "
+        "subtle texture-only damage may not be captured. The CNN prediction remains primary."
+    )
     if topology_config_path.exists():
         try:
             topology_preview = load_topology_config(str(topology_config_path))
