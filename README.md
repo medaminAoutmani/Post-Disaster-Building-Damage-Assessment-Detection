@@ -190,6 +190,20 @@ Train a Week 14 humanitarian classifier with DeBERTa-v3:
 python src\week14\week14_train_text_classifier.py --task-csv results\week14_crisismmd\processed\humanitarian.csv --output-dir results\week14_crisismmd\humanitarian_deberta --loss focal
 ```
 
+Run zero-shot DeBERTa classification without local training:
+
+```powershell
+python src\week14\week14_zero_shot_text_classifier.py --crisismmd-root data\CrisisMMD_v2.0 --split val --event mexico_earthquake --write-social-json --social-json results\week15_inputs\social_zero_shot_val.json
+```
+
+This writes `emotion.csv`, `disaster_type.csv`, prediction CSVs, and a summary under `results\week14_crisismmd\zero_shot`.
+
+In the Streamlit app, choose `Paste/upload tweets + DeBERTa zero-shot`, click `Classify Included Tweets`, then generate the report. The app saves the Week 15 social input JSON to:
+
+```text
+results\streamlit_app\<event_id>_social_week15_input.json
+```
+
 Filter LLM emotion pseudo-labels after labeling `emotion_prompts.jsonl`:
 
 ```powershell

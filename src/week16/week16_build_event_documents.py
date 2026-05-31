@@ -24,6 +24,7 @@ def build_document(event: dict[str, Any]) -> dict[str, Any]:
     social = event["social_media"]
     humanitarian = social.get("humanitarian", {})
     emotion = social.get("emotion", {})
+    disaster_type = social.get("disaster_type", {})
     tweets = social.get("representative_posts", [])
 
     satellite_summary = (
@@ -33,6 +34,7 @@ def build_document(event: dict[str, Any]) -> dict[str, Any]:
     )
     social_summary = (
         f"{social.get('informative_posts', 0)} informative posts. "
+        f"{sentence_from_counts('Disaster type', disaster_type)} "
         f"{sentence_from_counts('Humanitarian topics', humanitarian)} "
         f"{sentence_from_counts('Emotions', emotion)}"
     )
@@ -54,6 +56,7 @@ def build_document(event: dict[str, Any]) -> dict[str, Any]:
             "informative_posts": social.get("informative_posts", 0),
             "top_humanitarian": top_items(humanitarian),
             "top_emotion": top_items(emotion),
+            "top_disaster_type": top_items(disaster_type),
         },
         "payload": event,
     }

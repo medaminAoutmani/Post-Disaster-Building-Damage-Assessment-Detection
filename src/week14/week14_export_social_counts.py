@@ -57,6 +57,7 @@ def main() -> None:
     info_rows = read_rows(args.processed_dir / "informativeness.csv", args.split, args.event)
     humanitarian_rows = read_rows(args.processed_dir / "humanitarian.csv", args.split, args.event)
     emotion_rows = read_rows(args.processed_dir / "emotion.csv", args.split, args.event)
+    disaster_rows = read_rows(args.processed_dir / "disaster_type.csv", args.split, args.event)
 
     informative_rows = [row for row in info_rows if row.get("label") == "informative"]
     humanitarian_counts = Counter()
@@ -72,7 +73,15 @@ def main() -> None:
         if label:
             emotion_counts[label.lower()] += 1
 
+    disaster_counts = Counter()
+    for row in disaster_rows:
+        label = row.get("disaster_type") or row.get("label", "")
+        if label:
+            disaster_counts[label.lower()] += 1
+
     candidate_posts = informative_rows or humanitarian_rows
+    if not candidate_posts and (emotion_rows or disaster_rows):
+        candidate_posts = emotion_rows or disaster_rows
     output = {
         "source": "week14_crisismmd",
         "processed_dir": str(args.processed_dir),
@@ -81,6 +90,7 @@ def main() -> None:
         "informative_posts": len(informative_rows),
         "humanitarian": dict(humanitarian_counts),
         "emotion": dict(emotion_counts),
+        "disaster_type": dict(disaster_counts),
         "representative_posts": representative_posts(candidate_posts, args.top_posts),
     }
     args.output_json.parent.mkdir(parents=True, exist_ok=True)

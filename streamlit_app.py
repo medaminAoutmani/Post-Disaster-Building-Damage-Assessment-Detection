@@ -18,12 +18,13 @@ from torch.nn import functional as F
 
 ROOT = Path(__file__).resolve().parent
 SRC_DIR = ROOT / "src"
-for path in [SRC_DIR, SRC_DIR / "week11", SRC_DIR / "week12", SRC_DIR / "week15", SRC_DIR / "week16", SRC_DIR / "week17"]:
+for path in [SRC_DIR, SRC_DIR / "week11", SRC_DIR / "week12", SRC_DIR / "week14", SRC_DIR / "week15", SRC_DIR / "week16", SRC_DIR / "week17"]:
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
 from week11_dataset import CLASS_NAMES, IMAGENET_MEAN, IMAGENET_STD
 from week12_model_backbones import ArcMarginProduct, ObjectDamageRepresentationModel
+from week14_zero_shot_text_classifier import DEFAULT_MODEL_NAME, build_zero_shot_social_payload
 from week15_fuse_event import build_event
 from week16_build_event_documents import build_document
 from week17_generate_situation_report import template_report
@@ -90,6 +91,21 @@ def load_week12_model(checkpoint_path: str):
         arc_head.load_state_dict(checkpoint["arc_head_state_dict"])
         arc_head.eval()
     return model, arc_head
+
+
+@st.cache_resource(show_spinner=False)
+def load_zero_shot_classifier(model_name: str, device: str):
+    from transformers import pipeline
+
+    if device == "auto":
+        pipeline_device = 0 if torch.cuda.is_available() else -1
+    elif device == "cpu":
+        pipeline_device = -1
+    elif device == "cuda":
+        pipeline_device = 0
+    else:
+        pipeline_device = int(device)
+    return pipeline("zero-shot-classification", model=model_name, tokenizer=model_name, device=pipeline_device)
 
 
 @torch.no_grad()
@@ -193,6 +209,14 @@ def aggregate_tweets(tweets: list[str]) -> dict[str, Any]:
     }
 
 
+def save_social_payload(event_id: str, social_payload: dict[str, Any]) -> Path:
+    event_dir = ROOT / "results" / "streamlit_app"
+    event_dir.mkdir(parents=True, exist_ok=True)
+    social_json = event_dir / f"{event_id}_social_week15_input.json"
+    social_json.write_text(json.dumps(social_payload, indent=2), encoding="utf-8")
+    return social_json
+
+
 def save_outputs(event: dict[str, Any], document: dict[str, Any], report: str) -> tuple[Path, Path, Path]:
     event_dir = ROOT / "results" / "streamlit_app"
     event_dir.mkdir(parents=True, exist_ok=True)
@@ -254,7 +278,11 @@ with left:
 
 with right:
     st.header("Social Media")
-    social_mode = st.radio("Social input mode", ["Paste/upload tweets", "Upload social JSON"], horizontal=False)
+    social_mode = st.radio(
+        "Social input mode",
+        ["Paste/upload tweets + DeBERTa zero-shot", "Paste/upload tweets + keyword fallback", "Upload social JSON"],
+        horizontal=False,
+    )
     social_payload: dict[str, Any] | None = None
 
     if social_mode == "Upload social JSON":
@@ -266,19 +294,47 @@ with right:
         tweet_file = st.file_uploader("Optional TXT or CSV with tweet_text column", type=["txt", "csv"], key="tweets")
         tweets = parse_tweets(tweet_text, tweet_file)
         st.caption(f"{len(tweets)} tweets loaded.")
-        social_payload = aggregate_tweets(tweets) if tweets else None
+        if social_mode == "Paste/upload tweets + DeBERTa zero-shot":
+            deberta_model_name = st.text_input("Zero-shot DeBERTa model", value=DEFAULT_MODEL_NAME)
+            deberta_device = st.selectbox("Zero-shot device", ["auto", "cpu", "cuda"], index=0)
+            deberta_batch_size = st.number_input("Zero-shot batch size", min_value=1, max_value=32, value=8, step=1)
+            if st.button("Classify Included Tweets", disabled=not tweets):
+                try:
+                    with st.spinner("Classifying included tweets with zero-shot DeBERTa..."):
+                        classifier = load_zero_shot_classifier(deberta_model_name, deberta_device)
+                        social_payload = build_zero_shot_social_payload(
+                            tweets,
+                            classifier,
+                            event=event_id,
+                            split="streamlit",
+                            batch_size=int(deberta_batch_size),
+                            source=f"streamlit_zero_shot:{deberta_model_name}",
+                        )
+                    st.session_state["social_payload"] = social_payload
+                except Exception as exc:
+                    st.error(str(exc))
+            social_payload = st.session_state.get("social_payload")
+        else:
+            social_payload = aggregate_tweets(tweets) if tweets else None
 
     if social_payload:
         st.json(social_payload)
+        st.download_button(
+            "Download Week 15 social JSON",
+            json.dumps(social_payload, indent=2),
+            file_name=f"{event_id}_social_week15_input.json",
+            mime="application/json",
+        )
 
 st.header("Situation Report")
 generate = st.button("Generate Report", type="primary", disabled=not (event_id and satellite_payload and social_payload))
 if generate and satellite_payload and social_payload:
+    social_json = save_social_payload(event_id, social_payload)
     event = build_event(
         event_id,
         satellite_payload,
         social_payload,
-        {"satellite_source": mode, "social_source": social_mode},
+        {"satellite_source": mode, "social_source": social_mode, "social_json": str(social_json.relative_to(ROOT))},
     )
     document = build_document(event)
     report = template_report(event)

@@ -34,12 +34,19 @@ def normalize_satellite(payload: dict[str, Any]) -> dict[str, Any]:
 def normalize_social(payload: dict[str, Any]) -> dict[str, Any]:
     humanitarian = dict(payload.get("humanitarian", {}))
     emotion = dict(payload.get("emotion", payload.get("emotions", {})))
-    return {
+    disaster_type = dict(payload.get("disaster_type", payload.get("disaster_types", {})))
+    result: dict[str, Any] = {
         "informative_posts": int(payload.get("informative_posts", 0)),
         "humanitarian": {key: int(value) for key, value in humanitarian.items()},
         "emotion": {key: int(value) for key, value in emotion.items()},
+        "disaster_type": {key: int(value) for key, value in disaster_type.items()},
         "representative_posts": list(payload.get("representative_posts", payload.get("top_tweets", []))),
     }
+    if "classified_posts" in payload:
+        result["classified_posts"] = int(payload.get("classified_posts", 0))
+    if "included_tweets" in payload:
+        result["included_tweets"] = list(payload.get("included_tweets", []))
+    return result
 
 
 def build_event(
@@ -72,6 +79,7 @@ def main() -> None:
             "informative_posts": 834,
             "humanitarian": {"infrastructure_damage": 210, "affected_people": 155, "rescue_efforts": 94, "injured_dead": 42},
             "emotion": {"fear": 215, "hope": 71, "anger": 34, "sadness": 89},
+            "disaster_type": {"earthquake": 834},
             "representative_posts": [],
         },
     )

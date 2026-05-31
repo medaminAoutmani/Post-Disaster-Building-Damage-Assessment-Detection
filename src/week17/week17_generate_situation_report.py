@@ -68,6 +68,7 @@ def template_report(event: dict[str, Any]) -> str:
     social = event["social_media"]
     humanitarian = sorted_counts(social.get("humanitarian", {}))
     emotion = sorted_counts(social.get("emotion", {}))
+    disaster_type = sorted_counts(social.get("disaster_type", {}))
     total = satellite.get("total_damaged", satellite.get("destroyed", 0) + satellite.get("major", 0) + satellite.get("minor", 0))
     label = confidence_label(satellite.get("confidence"))
 
@@ -93,7 +94,9 @@ def template_report(event: dict[str, Any]) -> str:
         ),
         "",
         "2. Humanitarian impact",
-        f"Analysis of {social.get('informative_posts', 0)} informative social-media posts indicates the strongest topics are "
+        f"Analysis of {social.get('informative_posts', 0)} informative social-media posts indicates the likely disaster type is "
+        + count_summary(disaster_type, "not available")
+        + ". The strongest humanitarian topics are "
         + count_summary(humanitarian, "not available")
         + ".",
         "",
