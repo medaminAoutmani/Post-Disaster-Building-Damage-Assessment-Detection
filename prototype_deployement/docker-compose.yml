@@ -1,0 +1,107 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: docker.io/postgis/postgis:15-3.4
+    container_name: pda-postgres
+    environment:
+      POSTGRES_USER: pda
+      POSTGRES_PASSWORD: pda_secret
+      POSTGRES_DB: disaster_analytics
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pda -d disaster_analytics"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  qdrant:
+    image: docker.io/qdrant/qdrant:v1.9.0
+    container_name: pda-qdrant
+    volumes:
+      - qdrant_data:/qdrant/storage
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    environment:
+      QDRANT__SERVICE__GRPC_PORT: 6334
+
+  minio:
+    image: docker.io/minio/minio:RELEASE.2024-05-10T01-41-38Z
+    container_name: pda-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: docker.io/library/redis:7-alpine
+    container_name: pda-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+
+  backend:
+    build: ./backend
+    container_name: pda-backend
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://pda:pda_secret@postgres:5432/disaster_analytics
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      - REDIS_URL=redis://redis:6379/0
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+      - MINIO_BUCKET=disaster-data
+      - JWT_SECRET=super-secret-jwt-key-change-in-production
+      - ENVIRONMENT=development
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - RAG_PDF_DIR=/app/pdf_rag
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/app:/app/app
+      - ./pdf_rag:/app/pdf_rag:ro
+      - model_cache:/app/model_cache
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      minio:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    command: >
+      sh -c "python -m app.init_db &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+
+  frontend:
+    build: ./frontend
+    container_name: pda-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  qdrant_data:
+  minio_data:
+  redis_data:
+  model_cache:

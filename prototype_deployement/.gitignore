@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+.venv-demo/
+*.egg-info/
+dist/
+build/
+
+# Node
+node_modules/
+frontend/build/
+frontend/.env.local
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Data & Models
+*.pt
+*.pth
+*.h5
+*.onnx
+model_cache/
+local_runtime/
+backend.log
+frontend.log
+*.tif
+*.tiff
+*.geojson
+*.kml
+*.pdf
+
+# Env
+.env
+
+# OS
+.DS_Store
+Thumbs.db
+
+# K8s
+kubeconfig

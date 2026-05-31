@@ -1,0 +1,37 @@
+version: "3.8"
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.demo
+    container_name: pda-demo-backend
+    environment:
+      - RAG_PDF_DIR=/app/pdf_rag
+      - RAG_AUTO_INDEX_LOCAL_PDFS=true
+      - ALLOW_REMOTE_MODEL_DOWNLOADS=false
+    volumes:
+      - ./pdf_rag:/app/pdf_rag:ro
+      - demo_runtime:/app/local_runtime
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        REACT_APP_API_URL: /api
+    container_name: pda-demo-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  demo_runtime:

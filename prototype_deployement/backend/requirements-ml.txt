@@ -1,0 +1,17 @@
+# Optional dependencies for full model-backed inference.
+# The backend runs without these by using deterministic fallbacks.
+
+# Vector DB & RAG providers
+qdrant-client==1.9.1
+langchain==0.2.1
+langchain-community==0.2.1
+langchain-openai==0.1.7
+sentence-transformers==2.7.0
+chromadb==0.5.0
+
+# ML / Deep Learning
+torch==2.3.0
+torchvision==0.18.0
+transformers==4.41.1
+datasets==2.19.1
+accelerate==0.30.1

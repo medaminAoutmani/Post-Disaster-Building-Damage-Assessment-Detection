@@ -1,0 +1,13 @@
+# Minimal local demo runtime.
+# Use this when you want the app working without Docker/Postgres/MinIO/Qdrant/Torch.
+
+fastapi==0.110.3
+uvicorn[standard]==0.29.0
+python-multipart==0.0.9
+pydantic==2.7.1
+pydantic-settings==2.2.1
+numpy==1.26.4
+pymupdf==1.24.4
+pdfplumber==0.11.0
+python-dotenv==1.0.1
+structlog==24.1.0
