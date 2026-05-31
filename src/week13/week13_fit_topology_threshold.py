@@ -20,6 +20,10 @@ from week13_topology_features import (
 
 
 def normalize(matrix: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    if len(matrix) == 0:
+        raise ValueError("Cannot normalize an empty topology feature matrix.")
+    if not np.isfinite(matrix).all():
+        raise ValueError("Topology feature matrix contains NaN or infinite values. Rebuild the topology CSV from image crops.")
     mean = matrix.mean(axis=0)
     std = matrix.std(axis=0)
     std = np.where(std < 1e-7, 1.0, std)
@@ -27,12 +31,16 @@ def normalize(matrix: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
 
 
 def score_samples(matrix: np.ndarray, no_proto: np.ndarray, minor_proto: np.ndarray) -> np.ndarray:
+    if not np.isfinite(no_proto).all() or not np.isfinite(minor_proto).all():
+        raise ValueError("Cannot compute no/minor topology scores because one prototype contains NaN or infinite values.")
     distance_to_no = np.linalg.norm(matrix - no_proto[None, :], axis=1)
     distance_to_minor = np.linalg.norm(matrix - minor_proto[None, :], axis=1)
     return distance_to_no - distance_to_minor
 
 
 def prototype_distances(matrix: np.ndarray, prototypes: np.ndarray) -> np.ndarray:
+    if not np.isfinite(prototypes).all():
+        raise ValueError("Cannot compute topology prototype distances because at least one prototype contains NaN or infinite values.")
     return np.linalg.norm(matrix[:, None, :] - prototypes[None, :, :], axis=2)
 
 
@@ -89,6 +97,8 @@ def print_class_counts(counts: dict[int, int], selected_classes: set[int]) -> No
 
 
 def best_threshold(scores: np.ndarray, labels: np.ndarray) -> tuple[float, dict[str, float]]:
+    if not np.isfinite(scores).all():
+        raise ValueError("Cannot fit topology threshold because scores contain NaN or infinite values.")
     candidates = np.unique(scores)
     best = {"threshold": 0.0, "f1": -1.0, "precision": 0.0, "recall": 0.0}
     for threshold in candidates:
@@ -172,6 +182,11 @@ def main() -> None:
     matrix, mean, std = normalize(matrix_raw)
     class_indices = sorted(available_classes)
     prototypes = np.asarray([matrix[labels == class_index].mean(axis=0) for class_index in class_indices], dtype=np.float32)
+    if not np.isfinite(prototypes).all():
+        raise ValueError(
+            "Fitted topology prototypes contain NaN or infinite values. "
+            "Check class counts above and rebuild features with --split train --rebuild-topology-csv."
+        )
     distances = prototype_distances(matrix, prototypes)
     nearest_positions = np.argmin(distances, axis=1)
     topology_predictions = np.asarray([class_indices[position] for position in nearest_positions], dtype=np.int64)
