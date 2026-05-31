@@ -4,9 +4,9 @@
 :maxdepth: 2
 :caption: Contents
 
-readme
-project-report
 motivation
+project-report
+
 ```
 
 ## Overview
