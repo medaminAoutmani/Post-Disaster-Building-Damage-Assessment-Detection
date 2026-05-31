@@ -18,12 +18,13 @@ from torch.nn import functional as F
 
 ROOT = Path(__file__).resolve().parent
 SRC_DIR = ROOT / "src"
-for path in [SRC_DIR, SRC_DIR / "week11", SRC_DIR / "week12", SRC_DIR / "week14", SRC_DIR / "week15", SRC_DIR / "week16", SRC_DIR / "week17"]:
+for path in [SRC_DIR, SRC_DIR / "week11", SRC_DIR / "week12", SRC_DIR / "week13", SRC_DIR / "week14", SRC_DIR / "week15", SRC_DIR / "week16", SRC_DIR / "week17"]:
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
 from week11_dataset import CLASS_NAMES, IMAGENET_MEAN, IMAGENET_STD
 from week12_model_backbones import ArcMarginProduct, ObjectDamageRepresentationModel
+from week13_topology_features import TOPOLOGY_FEATURE_NAMES, extract_topology_signature_from_images
 from week14_zero_shot_text_classifier import DEFAULT_MODEL_NAME, build_zero_shot_social_payload
 from week15_fuse_event import build_event
 from week16_build_event_documents import build_document
@@ -38,6 +39,11 @@ PREFERRED_CHECKPOINT = (
     / "checkpoints"
     / "week12_convnext_tiny_gated_ce_best.pt"
 )
+TOPOLOGY_CONFIG_CANDIDATES = [
+    ROOT / "results" / "week13_topology" / "threshold" / "topology_threshold.json",
+    ROOT / "results" / "week13" / "week13_topology" / "threshold" / "topology_threshold.json",
+    ROOT / "results" / "week15_inputs" / "topology.json",
+]
 
 HUMANITARIAN_KEYWORDS = {
     "infrastructure_damage": ["building", "bridge", "road", "power", "utility", "collapse", "collapsed", "damage", "damaged", "crumble"],
@@ -93,6 +99,62 @@ def load_week12_model(checkpoint_path: str):
     return model, arc_head
 
 
+@st.cache_data(show_spinner=False)
+def load_topology_config(config_path: str) -> dict[str, Any]:
+    path = Path(config_path)
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    threshold_json = payload.get("threshold_json")
+    if threshold_json and "class_prototypes" not in payload:
+        threshold_path = Path(threshold_json)
+        if not threshold_path.is_absolute():
+            threshold_path = ROOT / threshold_path
+        if threshold_path.exists():
+            payload = json.loads(threshold_path.read_text(encoding="utf-8"))
+    return payload
+
+
+def first_existing_path(paths: list[Path]) -> Path:
+    for path in paths:
+        if path.exists():
+            return path
+    return paths[0]
+
+
+def topology_validate_prediction(
+    post_image: np.ndarray,
+    diff_image: np.ndarray,
+    cnn_prediction: str,
+    config: dict[str, Any],
+    thresholds: int = 16,
+) -> dict[str, Any]:
+    if "class_prototypes" not in config:
+        raise ValueError("Topology config must contain all-class class_prototypes. Refit Week 13 with the all-class prototype script.")
+    features = extract_topology_signature_from_images(post_image, diff_image, thresholds=thresholds)
+    vector = np.asarray([features[name] for name in TOPOLOGY_FEATURE_NAMES], dtype=np.float32)
+    mean = np.asarray(config["normalization_mean"], dtype=np.float32)
+    std = np.asarray(config["normalization_std"], dtype=np.float32)
+    normalized = (vector - mean) / std
+
+    distances = {}
+    class_indices = [int(index) for index in config.get("prototype_class_indices", range(len(CLASS_NAMES)))]
+    for class_index in class_indices:
+        class_name = CLASS_NAMES[class_index]
+        prototype = np.asarray(config["class_prototypes"][class_name], dtype=np.float32)
+        distances[class_name] = float(np.linalg.norm(normalized - prototype))
+    topology_prediction = min(distances.items(), key=lambda item: item[1])[0]
+    nearest = distances[topology_prediction]
+    ordered = sorted(distances.values())
+    margin = float(ordered[1] - ordered[0]) if len(ordered) > 1 else 0.0
+    return {
+        "cnn_prediction": cnn_prediction,
+        "topology_prediction": topology_prediction,
+        "topology_agrees_with_cnn": topology_prediction == cnn_prediction,
+        "nearest_distance": nearest,
+        "distance_margin": margin,
+        "prototype_distances": distances,
+    }
+
+
 @st.cache_resource(show_spinner=False)
 def load_zero_shot_classifier(model_name: str, device: str):
     from transformers import pipeline
@@ -109,7 +171,13 @@ def load_zero_shot_classifier(model_name: str, device: str):
 
 
 @torch.no_grad()
-def predict_crop_pairs(pre_files, post_files, checkpoint_path: Path) -> dict[str, Any]:
+def predict_crop_pairs(
+    pre_files,
+    post_files,
+    checkpoint_path: Path,
+    topology_config: dict[str, Any] | None = None,
+    topology_thresholds: int = 16,
+) -> dict[str, Any]:
     if len(pre_files) != len(post_files):
         raise ValueError("Upload the same number of pre-disaster and post-disaster building crops.")
     if not pre_files:
@@ -120,6 +188,8 @@ def predict_crop_pairs(pre_files, post_files, checkpoint_path: Path) -> dict[str
     confidence_sum: Counter[str] = Counter()
     total_confidence = 0.0
     rows = []
+    topology_rows = []
+    topology_agreements = 0
 
     for pre_file, post_file in zip(pre_files, post_files):
         pre_image = decode_image(pre_file)
@@ -140,9 +210,25 @@ def predict_crop_pairs(pre_files, post_files, checkpoint_path: Path) -> dict[str
         confidence_sum[class_name] += confidence
         total_confidence += confidence
         rows.append({"pre": pre_file.name, "post": post_file.name, "prediction": class_name, "confidence": confidence})
+        if topology_config is not None:
+            topology_result = topology_validate_prediction(
+                post_image,
+                diff_image,
+                class_name,
+                topology_config,
+                thresholds=topology_thresholds,
+            )
+            topology_agreements += int(topology_result["topology_agrees_with_cnn"])
+            topology_rows.append(
+                {
+                    "pre": pre_file.name,
+                    "post": post_file.name,
+                    **topology_result,
+                }
+            )
 
     total = len(rows)
-    return {
+    payload = {
         "source": "streamlit_week12_preferred_convnext_tiny_gated",
         "checkpoint": str(checkpoint_path.relative_to(ROOT)) if checkpoint_path.is_relative_to(ROOT) else str(checkpoint_path),
         "total_buildings": total,
@@ -159,6 +245,16 @@ def predict_crop_pairs(pre_files, post_files, checkpoint_path: Path) -> dict[str
         },
         "predictions": rows,
     }
+    if topology_config is not None:
+        payload["topology_validation"] = {
+            "role": "all_class_damage_classification_validation",
+            "validated": True,
+            "validated_buildings": len(topology_rows),
+            "topology_cnn_agreement_rate": topology_agreements / max(len(topology_rows), 1),
+            "class_prototypes": list(topology_config.get("class_prototypes", {}).keys()),
+            "predictions": topology_rows,
+        }
+    return payload
 
 
 def parse_tweets(text: str, uploaded_file) -> list[str]:
@@ -240,6 +336,22 @@ with st.sidebar:
         st.success("Preferred Week 12 gated ConvNeXt checkpoint found.")
     else:
         st.warning("Preferred vision checkpoint not found. Use manual satellite counts.")
+    default_topology_path = first_existing_path(TOPOLOGY_CONFIG_CANDIDATES)
+    topology_path = st.text_input("Week 13 topology prototypes", value=str(default_topology_path.relative_to(ROOT)))
+    topology_config_path = ROOT / topology_path
+    enable_topology = st.checkbox("Validate uploaded crop predictions with topology", value=topology_config_path.exists())
+    topology_thresholds = st.number_input("Topology thresholds", min_value=4, max_value=64, value=16, step=4)
+    if topology_config_path.exists():
+        try:
+            topology_preview = load_topology_config(str(topology_config_path))
+            if "class_prototypes" in topology_preview:
+                st.success("Week 13 all-class topology prototypes found.")
+            else:
+                st.warning("Topology JSON found, but it is the older no/minor format. Refit Week 13 all-class prototypes before enabling validation.")
+        except Exception as exc:
+            st.warning(f"Could not inspect topology JSON: {exc}")
+    else:
+        st.warning("Topology prototype JSON not found. Fit Week 13 prototypes or upload topology JSON later.")
     st.caption("Final fusion uses satellite damage assessment + social-media context.")
 
 event_id = st.text_input("Event ID", value="validation_demo")
@@ -267,7 +379,18 @@ with left:
         post_files = st.file_uploader("Post-disaster building crops", type=["png", "jpg", "jpeg"], accept_multiple_files=True, key="post")
         if st.button("Run Week 12 Vision Model", disabled=not checkpoint.exists()):
             try:
-                satellite_payload = predict_crop_pairs(pre_files, post_files, checkpoint)
+                topology_config = None
+                if enable_topology:
+                    if not topology_config_path.exists():
+                        raise FileNotFoundError(f"Topology prototype JSON not found: {topology_config_path}")
+                    topology_config = load_topology_config(str(topology_config_path))
+                satellite_payload = predict_crop_pairs(
+                    pre_files,
+                    post_files,
+                    checkpoint,
+                    topology_config=topology_config,
+                    topology_thresholds=int(topology_thresholds),
+                )
                 st.session_state["satellite_payload"] = satellite_payload
             except Exception as exc:
                 st.error(str(exc))

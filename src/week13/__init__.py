@@ -1,1 +1,1 @@
-"""Week 13 topology-guided semantic calibration."""
+"""Week 13 topology-guided all-class validation."""

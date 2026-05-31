@@ -28,6 +28,8 @@ def normalize_satellite(payload: dict[str, Any]) -> dict[str, Any]:
     }
     if confidence is not None:
         result["confidence"] = float(confidence)
+    if "topology_validation" in payload:
+        result["topology_validation"] = dict(payload.get("topology_validation", {}))
     return result
 
 

@@ -2,7 +2,7 @@
 
 Satellite-image building segmentation and object-level damage classification project using the xBD disaster dataset.
 
-The project builds a preprocessing and training pipeline for paired pre-disaster and post-disaster satellite images. It starts with binary and multiclass segmentation, transitions in Week 11 to building-level damage assessment, moves in Week 12 toward embedding-centric object-level damage representation learning, adds Week 13 topology-guided semantic calibration for no-damage/minor-damage ambiguity, and extends in Week 14 to CrisisMMD v2 social-media crisis understanding.
+The project builds a preprocessing and training pipeline for paired pre-disaster and post-disaster satellite images. It starts with binary and multiclass segmentation, transitions in Week 11 to building-level damage assessment, moves in Week 12 toward embedding-centric object-level damage representation learning, adds Week 13 topology-guided all-class validation for object-level damage predictions, and extends in Week 14 to CrisisMMD v2 social-media crisis understanding.
 
 ## Structure
 
@@ -129,7 +129,7 @@ The raw dataset is intentionally ignored by Git with `.gitignore`.
 - Week 10: building-masked damage loss for rare-class learning on building pixels only
 - Week 11: object-level building extraction and Siamese damage classification
 - Week 12: advanced object-level representation learning with stronger backbones, metric learning, temporal fusion, embedding plots, and hierarchical classification
-- Week 13: topology-guided semantic calibration with error isolation, Betti-curve signatures, topology thresholding, and a constrained no-damage/minor-damage TDA correction
+- Week 13: topology-guided all-class validation with Betti-curve signatures, class prototypes, CNN/topology agreement checks, and optional low-confidence correction
 - Week 14: CrisisMMD v2 tweet understanding with informativeness, humanitarian category, text-only damage severity proxy, and LLM pseudo-labeled emotion detection
 
 See `PROJECT_REPORT.md` for the full project report.
@@ -193,7 +193,7 @@ python src\week14\week14_train_text_classifier.py --task-csv results\week14_cris
 Run zero-shot DeBERTa classification without local training:
 
 ```powershell
-python src\week14\week14_zero_shot_text_classifier.py --crisismmd-root data\CrisisMMD_v2.0 --split val --event mexico_earthquake --write-social-json --social-json results\week15_inputs\social_zero_shot_val.json
+python src\week14\week14_zero_shot_text_classifier.py --crisismmd-root data\CrisisMMD_v2.0 --split val --event mexico_earthquake --model-name MoritzLaurer/deberta-v3-base-zeroshot-v2.0 --write-social-json --social-json results\week15_inputs\social_zero_shot_val.json
 ```
 
 This writes `emotion.csv`, `disaster_type.csv`, prediction CSVs, and a summary under `results\week14_crisismmd\zero_shot`.
@@ -724,35 +724,44 @@ cross_attention
 
 Gated fusion learns how much the post-disaster embedding should overwrite the pre-disaster embedding. Cross-attention lets pre, post, diff, and absolute-change embeddings interact before classification.
 
-## Week 13 Topology-Guided Semantic Calibration
+## Week 13 Topology-Guided All-Class Validation
 
-Week 13 no longer trains another full damage classifier. It adds a targeted TDA verifier for the clearest semantic ambiguity:
+Week 13 no longer treats topology as only a `no_damage`/`minor_damage` verifier. It now extracts topology signatures for every object-level damage class and fits one normalized topology prototype per class:
 
 ```text
-no_damage <-> minor_damage
+no_damage
+minor_damage
+major_damage
+destroyed
 ```
 
-Phase 1 isolates CNN mistakes:
+Phase 1 exports CNN predictions and probabilities for all classes:
 
 ```powershell
 python src\week13\week13_error_isolation.py --dataset-root data\week11_buildings_week8_extra --checkpoint results\week12\week12_convnext_tiny_gated_effective_no_sampler\checkpoints\week12_convnext_tiny_gated_ce_best.pt --split val --output-csv results\week13_topology\error_regions.csv
 ```
 
-Phase 2 and 3 extract topology features and fit the no/minor threshold:
+Phase 2 and 3 extract topology features and fit all-class topology prototypes:
 
 ```powershell
-python src\week13\week13_fit_topology_threshold.py --dataset-root data\week11_buildings_week8_extra --split val --topology-csv results\week13_topology\topology_features.csv --output-dir results\week13_topology\threshold
+python src\week13\week13_fit_topology_threshold.py --dataset-root data\week11_buildings_week8_extra --split train --topology-csv results\week13_topology\topology_features_train.csv --output-dir results\week13_topology\threshold
+```
+
+If `topology_features.csv` was created by an older no/minor-only run, force a clean all-class rebuild:
+
+```powershell
+python src\week13\week13_fit_topology_threshold.py --dataset-root data\week11_buildings_week8_extra --split train --topology-csv results\week13_topology\topology_features_train.csv --output-dir results\week13_topology\threshold --rebuild-topology-csv
 ```
 
 The topology pipeline uses building masks when available, otherwise it estimates them from the post-disaster crop. It also builds edge maps and difference masks, then exports Betti-curve summaries plus Wasserstein and bottleneck distances.
 
-Phase 4 applies the constrained hybrid correction:
+Phase 4 validates every CNN prediction against the nearest topology prototype and optionally corrects low-confidence predictions:
 
 ```powershell
-python src\week13\week13_hybrid_correction.py --dataset-root data\week11_buildings_week8_extra --checkpoint results\week12\week12_convnext_tiny_gated_effective_no_sampler\checkpoints\week12_convnext_tiny_gated_ce_best.pt --threshold-json results\week13_topology\threshold\topology_threshold.json --split val --output-dir results\week13_topology\hybrid --ambiguity-margin 0.20
+python src\week13\week13_hybrid_correction.py --dataset-root data\week11_buildings_week8_extra --checkpoint results\week12\week12_convnext_tiny_gated_effective_no_sampler\checkpoints\week12_convnext_tiny_gated_ce_best.pt --threshold-json results\week13_topology\threshold\topology_threshold.json --split val --output-dir results\week13_topology\hybrid --ambiguity-margin 0.20 --correction-policy ambiguous
 ```
 
-Week 13 compares the baseline ConvNeXt-Tiny gated model against ConvNeXt-Tiny gated plus TDA correction. The main metrics are `minor_damage` precision, recall, F1, predicted minor count, no-damage false positives, and minor-damage false negatives.
+Use `--correction-policy none` to validate without changing CNN predictions, or `--correction-policy all` to test a topology-only override. Week 13 now compares baseline CNN metrics, topology-only prototype metrics, topology/CNN agreement rate, and hybrid corrected metrics across all four damage classes.
 
 By default, experiment artifacts are saved under:
 

@@ -1,4 +1,4 @@
-"""Topology signatures for Week 13 no-damage/minor-damage calibration."""
+"""Topology signatures for Week 13 all-class damage validation."""
 
 from __future__ import annotations
 
@@ -149,6 +149,31 @@ def extract_topology_signature(sample_dir: Path, thresholds: int = 16) -> dict[s
     building = load_or_estimate_building_mask(sample_dir)
     edges = edge_mask(sample_dir)
     diff = difference_mask(sample_dir)
+    return extract_topology_signature_from_masks(building, edges, diff, thresholds=thresholds)
+
+
+def extract_topology_signature_from_images(
+    post_image: np.ndarray,
+    diff_image: np.ndarray,
+    building_mask: np.ndarray | None = None,
+    thresholds: int = 16,
+) -> dict[str, float]:
+    """Extract the same topology signature from in-memory Streamlit images."""
+    post_gray = cv2.cvtColor(post_image, cv2.COLOR_RGB2GRAY) if post_image.ndim == 3 else post_image
+    diff_gray = cv2.cvtColor(diff_image, cv2.COLOR_RGB2GRAY) if diff_image.ndim == 3 else diff_image
+    building = building_mask if building_mask is not None else otsu_mask(post_gray)
+    edges = cv2.Canny(post_gray, 80, 160)
+    diff = otsu_mask(diff_gray)
+    return extract_topology_signature_from_masks(building, edges, diff, thresholds=thresholds)
+
+
+def extract_topology_signature_from_masks(
+    building: np.ndarray,
+    edges: np.ndarray,
+    diff: np.ndarray,
+    thresholds: int = 16,
+) -> dict[str, float]:
+    """Extract topology features from prepared building, edge, and difference masks."""
 
     building_b0, building_b1 = betti_curve(building, thresholds)
     edge_b0, edge_b1 = betti_curve(edges, thresholds)

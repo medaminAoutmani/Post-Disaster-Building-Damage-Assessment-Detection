@@ -1,4 +1,4 @@
-"""Apply topology-guided no_damage/minor_damage correction to CNN predictions."""
+"""Apply all-class topology validation/correction to CNN predictions."""
 
 from __future__ import annotations
 
@@ -51,9 +51,33 @@ def topology_score(sample_dir: Path, config: dict, thresholds: int) -> float:
     return float(np.linalg.norm(normalized - no_proto) - np.linalg.norm(normalized - minor_proto))
 
 
+def topology_prediction(sample_dir: Path, config: dict, thresholds: int) -> tuple[int, dict[str, float]]:
+    features = extract_topology_signature(sample_dir, thresholds=thresholds)
+    vector = np.asarray([features[name] for name in TOPOLOGY_FEATURE_NAMES], dtype=np.float32)
+    mean = np.asarray(config["normalization_mean"], dtype=np.float32)
+    std = np.asarray(config["normalization_std"], dtype=np.float32)
+    normalized = (vector - mean) / std
+
+    if "class_prototypes" not in config:
+        score = topology_score(sample_dir, config, thresholds)
+        threshold = float(config["topology_distance_threshold"])
+        prediction = 1 if score >= threshold else 0
+        return prediction, {"legacy_no_minor_score": score, "legacy_no_minor_threshold": threshold}
+
+    prototype_payload = config["class_prototypes"]
+    class_indices = [int(index) for index in config.get("prototype_class_indices", range(len(prototype_payload)))]
+    distances = {}
+    for class_index in class_indices:
+        class_name = CLASS_NAMES[class_index]
+        prototype = np.asarray(prototype_payload[class_name], dtype=np.float32)
+        distances[class_name] = float(np.linalg.norm(normalized - prototype))
+    prediction_name = min(distances.items(), key=lambda item: item[1])[0]
+    return CLASS_NAMES.index(prediction_name), distances
+
+
 @torch.no_grad()
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Week 13: hybrid CNN + TDA correction.")
+    parser = argparse.ArgumentParser(description="Week 13: hybrid CNN + all-class topology validation.")
     parser.add_argument("--dataset-root", type=Path, default=Path("data") / "week11_buildings_week8_extra")
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--threshold-json", type=Path, required=True)
@@ -63,10 +87,16 @@ def main() -> None:
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--thresholds", type=int, default=16)
     parser.add_argument("--ambiguity-margin", type=float, default=0.20)
+    parser.add_argument(
+        "--correction-policy",
+        choices=["none", "ambiguous", "all"],
+        default="ambiguous",
+        help="none validates only, ambiguous corrects low-margin CNN predictions, all always uses topology.",
+    )
     args = parser.parse_args()
 
     config = json.loads(args.threshold_json.read_text(encoding="utf-8"))
-    threshold = float(config["topology_distance_threshold"])
+    threshold = config.get("topology_distance_threshold")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dataset = BuildingDamageDataset(args.dataset_root, args.split)
     dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
@@ -74,58 +104,136 @@ def main() -> None:
 
     baseline_confusion = torch.zeros((len(CLASS_NAMES), len(CLASS_NAMES)), dtype=torch.long)
     hybrid_confusion = torch.zeros((len(CLASS_NAMES), len(CLASS_NAMES)), dtype=torch.long)
+    topology_confusion = torch.zeros((len(CLASS_NAMES), len(CLASS_NAMES)), dtype=torch.long)
     corrections = []
+    validations = []
     for batch in dataloader:
         logits = model(batch["pre"].to(device), batch["post"].to(device), batch["diff"].to(device))
         probs = F.softmax(logits, dim=1).cpu()
         baseline_predictions = torch.argmax(probs, dim=1)
         hybrid_predictions = baseline_predictions.clone()
+        topology_predictions = baseline_predictions.clone()
         labels = batch["label"].long()
         for index in range(len(labels)):
             prediction = int(baseline_predictions[index].item())
-            no_minor_gap = abs(float(probs[index, 0].item()) - float(probs[index, 1].item()))
-            if prediction in {0, 1} and no_minor_gap <= args.ambiguity_margin:
-                sample_dir = Path(str(batch["metadata_path"][index])).parent
-                score = topology_score(sample_dir, config, thresholds=args.thresholds)
-                corrected = 1 if score >= threshold else 0
+            sorted_probs = torch.sort(probs[index], descending=True).values
+            top1_confidence = float(sorted_probs[0].item())
+            top2_margin = float((sorted_probs[0] - sorted_probs[1]).item()) if len(sorted_probs) > 1 else 1.0
+            sample_dir = Path(str(batch["metadata_path"][index])).parent
+            topo_prediction, topo_distances = topology_prediction(sample_dir, config, thresholds=args.thresholds)
+            topology_predictions[index] = topo_prediction
+            topology_agrees = topo_prediction == prediction
+            should_correct = (
+                args.correction_policy == "all"
+                or (args.correction_policy == "ambiguous" and top2_margin <= args.ambiguity_margin)
+            )
+            if should_correct:
+                corrected = topo_prediction
                 hybrid_predictions[index] = corrected
                 if corrected != prediction:
                     corrections.append(
                         {
                             "metadata_path": str(batch["metadata_path"][index]),
                             "label": int(labels[index].item()),
+                            "label_name": CLASS_NAMES[int(labels[index].item())],
                             "baseline_prediction": prediction,
+                            "baseline_prediction_name": CLASS_NAMES[prediction],
                             "hybrid_prediction": corrected,
-                            "topology_score": score,
+                            "hybrid_prediction_name": CLASS_NAMES[corrected],
+                            "topology_prediction": topo_prediction,
+                            "topology_prediction_name": CLASS_NAMES[topo_prediction],
+                            "topology_distances": json.dumps(topo_distances),
                             "threshold": threshold,
-                            "p_no_damage": float(probs[index, 0].item()),
-                            "p_minor_damage": float(probs[index, 1].item()),
+                            "top1_confidence": top1_confidence,
+                            "top2_margin": top2_margin,
                         }
                     )
+            validations.append(
+                {
+                    "metadata_path": str(batch["metadata_path"][index]),
+                    "label": int(labels[index].item()),
+                    "label_name": CLASS_NAMES[int(labels[index].item())],
+                    "baseline_prediction": prediction,
+                    "baseline_prediction_name": CLASS_NAMES[prediction],
+                    "topology_prediction": topo_prediction,
+                    "topology_prediction_name": CLASS_NAMES[topo_prediction],
+                    "topology_agrees_with_cnn": int(topology_agrees),
+                    "cnn_correct": int(prediction == int(labels[index].item())),
+                    "topology_correct": int(topo_prediction == int(labels[index].item())),
+                    "hybrid_prediction": int(hybrid_predictions[index].item()),
+                    "hybrid_prediction_name": CLASS_NAMES[int(hybrid_predictions[index].item())],
+                    "top1_confidence": top1_confidence,
+                    "top2_margin": top2_margin,
+                    "topology_distances": json.dumps(topo_distances),
+                }
+            )
         baseline_confusion += confusion_matrix(baseline_predictions, labels, len(CLASS_NAMES))
+        topology_confusion += confusion_matrix(topology_predictions, labels, len(CLASS_NAMES))
         hybrid_confusion += confusion_matrix(hybrid_predictions, labels, len(CLASS_NAMES))
 
     baseline_metrics = metrics_from_confusion(baseline_confusion)
+    topology_metrics = metrics_from_confusion(topology_confusion)
     hybrid_metrics = metrics_from_confusion(hybrid_confusion)
+    agreement_rate = sum(row["topology_agrees_with_cnn"] for row in validations) / max(len(validations), 1)
     args.output_dir.mkdir(parents=True, exist_ok=True)
     save_json(
         {
             "baseline_metrics": baseline_metrics,
+            "topology_metrics": topology_metrics,
             "hybrid_metrics": hybrid_metrics,
             "topology_distance_threshold": threshold,
             "ambiguity_margin": args.ambiguity_margin,
+            "correction_policy": args.correction_policy,
+            "topology_cnn_agreement_rate": agreement_rate,
+            "validated_samples": len(validations),
             "num_corrections": len(corrections),
         },
         args.output_dir / "metrics" / "hybrid_metrics.json",
     )
     save_confusion_csv(baseline_confusion, args.output_dir / "confusion_matrices" / "baseline_confusion_matrix.csv")
+    save_confusion_csv(topology_confusion, args.output_dir / "confusion_matrices" / "topology_confusion_matrix.csv")
     save_confusion_csv(hybrid_confusion, args.output_dir / "confusion_matrices" / "hybrid_confusion_matrix.csv")
     save_confusion_plot(hybrid_confusion, args.output_dir / "confusion_matrices" / "hybrid_confusion_matrix.png")
     with (args.output_dir / "corrections.csv").open("w", newline="", encoding="utf-8") as file:
-        fieldnames = ["metadata_path", "label", "baseline_prediction", "hybrid_prediction", "topology_score", "threshold", "p_no_damage", "p_minor_damage"]
+        fieldnames = [
+            "metadata_path",
+            "label",
+            "label_name",
+            "baseline_prediction",
+            "baseline_prediction_name",
+            "hybrid_prediction",
+            "hybrid_prediction_name",
+            "topology_prediction",
+            "topology_prediction_name",
+            "topology_distances",
+            "threshold",
+            "top1_confidence",
+            "top2_margin",
+        ]
         writer = csv.DictWriter(file, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(corrections)
+    with (args.output_dir / "topology_validation.csv").open("w", newline="", encoding="utf-8") as file:
+        fieldnames = [
+            "metadata_path",
+            "label",
+            "label_name",
+            "baseline_prediction",
+            "baseline_prediction_name",
+            "topology_prediction",
+            "topology_prediction_name",
+            "topology_agrees_with_cnn",
+            "cnn_correct",
+            "topology_correct",
+            "hybrid_prediction",
+            "hybrid_prediction_name",
+            "top1_confidence",
+            "top2_margin",
+            "topology_distances",
+        ]
+        writer = csv.DictWriter(file, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(validations)
 
 
 if __name__ == "__main__":

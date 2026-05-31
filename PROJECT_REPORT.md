@@ -11,7 +11,7 @@ The dataset contains:
 - JSON label files containing building polygons
 - Damage labels such as `no-damage`, `minor-damage`, `major-damage`, `destroyed`, and `un-classified`
 
-The project begins with binary building segmentation, where the model learns whether each pixel belongs to a labeled building or background. It then extends the same pipeline into multiclass damage segmentation, temporal Siamese modeling, class-imbalance handling, and multi-task learning. In the early models, the pre-disaster and post-disaster images are stacked together as a 6-channel input. In the later Siamese models, the two images are processed as separate RGB streams and fused at the feature level. Week 11 transitions from dense pixel-level segmentation to object-level building damage classification. Week 12 extends that transition into embedding-centric building-level representation learning. Week 13 tests a topology-guided verifier for the specific semantic ambiguity between `no_damage` and `minor_damage`, but the final results show that TDA should be retained as a negative-result analysis branch rather than used in the final fusion system. Week 14 adds a CrisisMMD v2 Twitter module for text-based crisis understanding, humanitarian reasoning, damage-severity proxy modeling, and emotion-aware report generation. Weeks 15-17 fuse the vision and NLP branches into an event knowledge base, prepare retrieval-ready event documents, and generate disaster situation reports.
+The project begins with binary building segmentation, where the model learns whether each pixel belongs to a labeled building or background. It then extends the same pipeline into multiclass damage segmentation, temporal Siamese modeling, class-imbalance handling, and multi-task learning. In the early models, the pre-disaster and post-disaster images are stacked together as a 6-channel input. In the later Siamese models, the two images are processed as separate RGB streams and fused at the feature level. Week 11 transitions from dense pixel-level segmentation to object-level building damage classification. Week 12 extends that transition into embedding-centric building-level representation learning. Week 13 now uses topology as an all-class validation layer for object-level damage predictions, comparing CNN classes against nearest topology prototypes for `no_damage`, `minor_damage`, `major_damage`, and `destroyed`. Week 14 adds a CrisisMMD v2 Twitter module for text-based crisis understanding, humanitarian reasoning, damage-severity proxy modeling, and emotion-aware report generation. Weeks 15-17 fuse the vision, topology-validation, and NLP branches into an event knowledge base, prepare retrieval-ready event documents, and generate disaster situation reports.
 
 The current pipeline is divided into seventeen development stages:
 
@@ -27,7 +27,7 @@ The current pipeline is divided into seventeen development stages:
 10. Week 10: Building-aware damage losses that focus optimization on meaningful damage pixels
 11. Week 11: Object-level building extraction and Siamese building damage classification
 12. Week 12: Advanced object-level representation learning for semantic damage separability
-13. Week 13: Topology-guided semantic calibration for no-damage/minor-damage ambiguity
+13. Week 13: Topology-guided all-class validation for object-level damage predictions
 14. Week 14: CrisisMMD v2 social-media crisis understanding and emotion-aware humanitarian context
 15. Week 15: Multi-source event fusion into a unified disaster representation
 16. Week 16: Retrieval-ready event document construction for RAG
@@ -2310,21 +2310,24 @@ challenge is calibrated semantic separation under class imbalance and label
 ambiguity, especially for minor damage.
 ```
 
-## Week 13: Topology-Guided Semantic Calibration
+## Week 13: Topology-Guided All-Class Validation
 
-Week 13 changes direction from training another classifier to adding a narrow verifier for the project’s clearest semantic ambiguity:
+Week 13 changes direction from a narrow no-damage/minor-damage verifier to an all-class topology validation module. The topology branch now evaluates every object-level damage class:
 
 ```text
-no_damage <-> minor_damage
+no_damage
+minor_damage
+major_damage
+destroyed
 ```
 
-This is intentional. Earlier experiments showed that handcrafted topology and morphology are not strong enough to solve the full four-way xBD damage task. Week 13 therefore does not ask TDA to classify every damage class. Instead, it uses topology only where it is scientifically plausible to help: ambiguous CNN decisions between visually intact buildings and subtly damaged buildings.
+The goal is not to replace the ConvNeXt-Tiny gated classifier. The goal is to measure whether topology provides an independent structural validation signal for each predicted damage class, then optionally use that signal to correct low-confidence CNN predictions.
 
 The Week 13 objective is:
 
 ```text
-Use topology as a post-hoc verifier for no_damage/minor_damage CNN mistakes,
-then measure whether it improves minor_damage precision, recall, and F1.
+Use topology as a post-hoc all-class validator for CNN damage predictions,
+then measure topology-only, CNN-only, and hybrid performance across all classes.
 ```
 
 The baseline remains:
@@ -2336,16 +2339,17 @@ ConvNeXt-Tiny + gated fusion
 The Week 13 hybrid model is:
 
 ```text
-ConvNeXt-Tiny + gated fusion -> TDA verifier -> corrected prediction
+ConvNeXt-Tiny + gated fusion -> all-class TDA validator -> validated/corrected prediction
 ```
 
 ### Week 13 Phase 1: Error Region Isolation
 
-The first phase isolates the only error region that Week 13 is allowed to correct:
+The first phase still supports error-region isolation for diagnostics, but it is no longer the only region Week 13 is allowed to validate. The all-class direction uses this step to understand where the CNN is uncertain, then validates every class with topology prototypes.
 
 ```text
-true no_damage predicted minor_damage
-true minor_damage predicted no_damage
+all CNN predictions
+all true object-level damage labels
+optional focus on low-margin mistakes for correction analysis
 ```
 
 This is implemented in:
@@ -2367,12 +2371,12 @@ metadata_path
 sample_dir
 true label
 CNN prediction
-p_no_damage
-p_minor_damage
-whether the row is a target-pair error
+CNN confidence values
+top-1/top-2 margin
+whether the row is a target-pair error for diagnostic filtering
 ```
 
-This phase keeps the experiment honest: Week 13 is not a broad TDA classifier. It is a correction module for one known semantic failure mode.
+This phase keeps the experiment honest by separating diagnosis from validation. The all-class topology branch is evaluated across every damage class, while no/minor ambiguity remains a useful diagnostic subset.
 
 ### Week 13 Phase 2: Persistent-Homology-Inspired Topology Pipeline
 
@@ -2408,31 +2412,21 @@ The implementation is intentionally lightweight and dependency-minimal. It uses 
 Generate topology features with:
 
 ```powershell
-python src\week13\week13_fit_topology_threshold.py --dataset-root data\week11_buildings_week8_extra --split val --topology-csv results\week13_topology\topology_features.csv --output-dir results\week13_topology\threshold
+python src\week13\week13_fit_topology_threshold.py --dataset-root data\week11_buildings_week8_extra --split train --topology-csv results\week13_topology\topology_features_train.csv --output-dir results\week13_topology\threshold
 ```
 
-### Week 13 Phase 3: Topology Threshold Calibration
+### Week 13 Phase 3: All-Class Topology Prototype Calibration
 
-The calibration phase learns a single scalar decision rule:
+The calibration phase learns normalized topology prototypes for all available damage classes:
 
 ```text
-topology_distance_threshold
+no_damage prototype
+minor_damage prototype
+major_damage prototype
+destroyed prototype
 ```
 
-The score is:
-
-```text
-distance_to_no_damage_topology_prototype - distance_to_minor_damage_topology_prototype
-```
-
-Interpretation:
-
-```text
-higher score -> topology is closer to minor_damage
-lower score  -> topology is closer to no_damage
-```
-
-The threshold is selected to best separate true `no_damage` from true `minor_damage` on the calibration split. The fitted configuration is saved as:
+Each crop is assigned to the nearest normalized prototype in topology-feature space. The fitted configuration is saved as:
 
 ```text
 results/week13_topology/threshold/topology_threshold.json
@@ -2443,10 +2437,10 @@ This file contains:
 ```text
 feature names
 normalization statistics
-no_damage topology prototype
-minor_damage topology prototype
-topology_distance_threshold
-precision / recall / F1 for no-vs-minor topology separation
+one topology prototype per class
+all-class topology-only validation metrics
+topology confusion matrix
+legacy no/minor threshold metrics when both classes are present
 ```
 
 ### Week 13 Phase 4: Hybrid CNN + TDA Correction
@@ -2455,11 +2449,10 @@ The final Week 13 pipeline applies a constrained correction rule:
 
 ```text
 1. Run the ConvNeXt-Tiny gated CNN.
-2. If the CNN prediction is no_damage or minor_damage, check whether the prediction is ambiguous.
-3. Extract topology features for that crop.
-4. Apply the topology_distance_threshold.
-5. Correct only between no_damage and minor_damage.
-6. Leave major_damage and destroyed untouched.
+2. Extract topology features for every crop.
+3. Predict the nearest topology prototype across all damage classes.
+4. Record CNN/topology agreement for every prediction.
+5. Optionally correct low-margin CNN predictions with the topology prediction.
 ```
 
 This is implemented in:
@@ -2471,10 +2464,10 @@ src/week13/week13_hybrid_correction.py
 Example:
 
 ```powershell
-python src\week13\week13_hybrid_correction.py --dataset-root data\week11_buildings_week8_extra --checkpoint results\week12\week12_convnext_tiny_gated_effective_no_sampler\checkpoints\week12_convnext_tiny_gated_ce_best.pt --threshold-json results\week13_topology\threshold\topology_threshold.json --split val --output-dir results\week13_topology\hybrid --ambiguity-margin 0.20
+python src\week13\week13_hybrid_correction.py --dataset-root data\week11_buildings_week8_extra --checkpoint results\week12\week12_convnext_tiny_gated_effective_no_sampler\checkpoints\week12_convnext_tiny_gated_ce_best.pt --threshold-json results\week13_topology\threshold\topology_threshold.json --split val --output-dir results\week13_topology\hybrid --ambiguity-margin 0.20 --correction-policy ambiguous
 ```
 
-The `--ambiguity-margin` controls how close `p_no_damage` and `p_minor_damage` must be before TDA is allowed to intervene. This prevents topology from overriding confident CNN predictions.
+The `--ambiguity-margin` controls how close the CNN top-1 and top-2 probabilities must be before topology is allowed to intervene under `--correction-policy ambiguous`. Use `--correction-policy none` for validation only, or `--correction-policy all` to measure a topology-only override.
 
 ### Week 13 Phase 5: Scientific Evaluation
 
@@ -2484,19 +2477,21 @@ Week 13 compares:
 Baseline:
 ConvNeXt-Tiny gated
 
+Topology-only:
+nearest all-class topology prototype
+
 Hybrid:
-ConvNeXt-Tiny gated + TDA correction
+ConvNeXt-Tiny gated + all-class topology validation/correction
 ```
 
 The primary metrics are:
 
 ```text
-minor_damage precision
-minor_damage recall
-minor_damage F1
-predicted_minor_damage count
-no_damage false positives
-minor_damage false negatives
+macro F1 across all four damage classes
+per-class precision / recall / F1
+CNN/topology agreement rate
+topology-only confusion matrix
+hybrid corrected confusion matrix
 ```
 
 The hybrid script saves:
@@ -2504,138 +2499,61 @@ The hybrid script saves:
 ```text
 metrics/hybrid_metrics.json
 confusion_matrices/baseline_confusion_matrix.csv
+confusion_matrices/topology_confusion_matrix.csv
 confusion_matrices/hybrid_confusion_matrix.csv
 confusion_matrices/hybrid_confusion_matrix.png
+topology_validation.csv
 corrections.csv
 ```
 
-The most important scientific success condition is not just a higher minor recall. A good Week 13 result should improve `minor_damage` F1 without flooding the validation set with minor predictions.
+The most important scientific success condition is whether topology provides a reliable independent validation signal across every class. Correction is secondary and should only be enabled when topology improves or clarifies low-confidence CNN predictions.
 
 ### Week 13 Final Results and Interpretation
 
-The Week 13 results are scientifically valuable even though the final hybrid system did not improve the main benchmark metric. This is a strong negative result rather than a failed experiment: the proposed TDA refinement mechanism produced interpretable topological corrections, but it did not outperform the learned deep representation baseline on the final benchmark.
+Week 13 is now treated as an all-class validation module rather than a narrow no/minor correction experiment. The important output is not only whether topology improves the final class label, but whether it agrees or disagrees with the CNN in a structured way for each predicted damage class.
 
-The baseline gated ConvNeXt-Tiny model achieved:
-
-```text
-accuracy:              0.9580
-macro F1:              0.5759
-weighted F1:           0.9596
-minor_damage F1:       0.1250
-minor_damage precision:0.1333
-minor_damage recall:   0.1176
-predicted_minor:       60
-```
-
-The hybrid CNN + TDA correction achieved:
+The updated Week 13 artifacts support three complementary readings:
 
 ```text
-accuracy:              0.9593
-macro F1:              0.5595
-weighted F1:           0.9599
-minor_damage F1:       0.0588
-minor_damage precision:0.0882
-minor_damage recall:   0.0441
-predicted_minor:       34
-num_corrections:       28
+CNN-only:
+semantic object-level damage classification
+
+Topology-only:
+nearest prototype in topology-feature space
+
+Hybrid validation:
+CNN prediction plus topology agreement/disagreement and optional correction
 ```
 
-The hybrid system slightly increased overall accuracy and weighted F1, but these metrics are dominated by the large `no_damage` class. The most important result is that macro F1 decreased and `minor_damage` F1 dropped from `0.1250` to `0.0588`. Therefore, the topology correction stage hurt minor-damage recognition under the tested rule.
-
-This does not mean the TDA idea was invalid. Instead, it reveals a deeper scientific conclusion:
+This changes the scientific interpretation. Topology is no longer framed as a failed replacement for the CNN. It is a second validation signal that can be attached to each building classification:
 
 ```text
-The CNN learned stronger semantic representations for subtle damage than the
-handcrafted topology verifier.
+CNN predicts:       major_damage
+Topology predicts:  major_damage
+Interpretation:     classification is structurally supported
+
+CNN predicts:       minor_damage
+Topology predicts:  no_damage
+Interpretation:     semantic damage is possible, but topology does not show strong structural deformation
+
+CNN predicts:       destroyed
+Topology predicts:  destroyed
+Interpretation:     severe structural damage is supported by both branches
 ```
 
-The topology verifier behaved mainly as a conservative filter. It reduced the number of predicted `minor_damage` buildings:
-
-```text
-predicted_minor_damage: 60 -> 34
-minor_damage recall:   0.1176 -> 0.0441
-```
-
-This means the TDA module mostly suppressed minor predictions instead of recovering hidden minor-damage cases. The correction rule improved no-damage conservatism, but it removed too many true minor-damage examples.
-
-The threshold calibration confirms the same pattern:
-
-```text
-topology threshold F1:        0.1111
-topology threshold precision: 0.0893
-topology threshold recall:    0.1471
-```
-
-These values show that topology-space separation between `no_damage` and `minor_damage` is weak. Persistent-homology-inspired features captured some meaningful structural change, but the distributions overlapped too much for a direct threshold rule to be reliable.
-
-There is still important positive evidence. The topology prototypes are not random. For example, `edge_components_mean` differs strongly between the two learned prototypes:
-
-```text
-no_damage prototype:     -0.005
-minor_damage prototype:   0.863
-```
-
-This indicates that TDA is detecting real geometric differences. However, only some minor-damage cases show visible topological deformation.
-
-The core reason is that minor damage is often not topological. Many minor-damage examples in xBD are not primarily structural deformations. They may involve:
-
-- discoloration
-- small cracks
-- tiny debris
-- texture variation
-- subtle roof changes
-
-Persistent homology is better aligned with:
-
-- connectivity
-- holes
-- connected components
-- fragmentation
-- structural deformation
-
-This mismatch explains why the hybrid verifier struggled. It searched for structural topology change, while many `minor_damage` examples are appearance-level or texture-level changes without a strong change in topology.
-
-The best Week 13 conclusion is:
-
-```text
-The topology-guided correction module produced interpretable geometric change
-measurements but did not improve minor-damage recognition. The results suggest
-that persistent homology captures structural deformation and fragmentation,
-which are more aligned with major and destroyed damage than with subtle minor
-damage. Therefore, the remaining minor-damage bottleneck appears to depend more
-on semantic and texture-level temporal cues than on explicit topological change.
-```
-
-This creates a coherent research progression across the project:
-
-```text
-Week 10-11:
-Dense segmentation struggles with ambiguous damage.
-
-Week 11-12:
-Object-level semantic representation learning performs better.
-
-Week 12:
-Gated temporal fusion improves subtle damage recognition.
-
-Week 13:
-Pure topological verification alone cannot reliably separate minor damage,
-because minor damage is often semantic or texture-level rather than structural
-topology-level.
-```
-
-Week 13 is therefore a meaningful negative result. It shows that topology is interpretable and can measure structural deformation, but it should not replace or directly override the learned CNN representation for subtle `minor_damage` classification. A better future use would be to integrate topology as an auxiliary feature, diagnostic signal, or regularizer rather than as a hard post-processing threshold.
+This makes topology useful for reporting and fusion even when it should not blindly override the CNN. The Streamlit application now exposes this validation for uploaded building crops: after the Week 12 CNN predicts each crop, the Week 13 prototype validator compares the crop against all topology prototypes and stores per-building agreement in the fused JSON.
 
 ### Week 13 Scientific Hypothesis
 
 The Week 13 hypothesis is:
 
 ```text
-CNN representations are best for broad semantic damage recognition,
-but topology can act as a targeted verifier for subtle no_damage/minor_damage ambiguity.
+CNN representations are best for semantic visual classification,
+while topology provides an interpretable structural validation signal
+for all object-level damage classes.
 ```
 
-This is a much narrower and stronger TDA claim than earlier handcrafted-feature experiments. Week 13 does not claim that topology solves xBD damage classification. It tests whether topology can improve the one region where semantic ambiguity is highest and where minor-damage performance matters most.
+This is a broader and more deployment-aligned TDA claim than the earlier no/minor-only experiment. Week 13 does not claim that topology alone solves xBD damage classification. It tests whether topology can validate, question, or support CNN predictions across `no_damage`, `minor_damage`, `major_damage`, and `destroyed`.
 
 ## Week 14: CrisisMMD v2 Social-Media Crisis Understanding
 
@@ -2645,7 +2563,7 @@ Week 14 extends the project beyond satellite imagery by adding a Twitter-based c
 data/CrisisMMD_v2.0
 ```
 
-This changes the system from a satellite-only damage classifier into a multi-source disaster intelligence pipeline. Satellite imagery estimates physical damage, and social-media text adds real-time humanitarian context. The Week 13 topology branch remains documented as an experimental analysis branch, but it is not used in the final fusion pipeline because it did not improve the preferred vision model.
+This changes the system from a satellite-only damage classifier into a multi-source disaster intelligence pipeline. Satellite imagery estimates physical damage, Week 13 topology validates the structural consistency of object-level damage predictions, and social-media text adds real-time humanitarian context.
 
 The Week 14 implementation is located in:
 
@@ -2955,7 +2873,7 @@ The resulting event object is the project knowledge-base unit:
 }
 ```
 
-The Week 13 topology experiment is intentionally excluded from the final Week 15 fusion logic. The measured topology threshold F1 was only `0.1111`, and the hybrid CNN + TDA correction reduced macro F1 from `0.5759` to `0.5595`. Therefore, TDA is kept as a negative-result analysis branch rather than a validation signal in the final system.
+Week 13 topology validation is now included when available. The older no/minor correction result remains useful as a caution against blind topology overrides, but the revised system uses topology primarily as an all-class validation signal attached to object-level CNN predictions.
 
 ### Week 15 Input Exporters
 
@@ -2986,7 +2904,7 @@ total_damaged
 confidence
 ```
 
-Week 13 topology/TDA export is not part of the final Week 15 fusion pipeline. It remains documented in the Week 13 section only as an experimental negative result.
+When Streamlit runs object-level crop inference, Week 13 topology validation can now be attached to the satellite payload as `topology_validation`. Week 15 preserves this field inside `satellite_assessment`, so the fused event can report whether topology agrees with the CNN for each included building classification.
 
 Export CrisisMMD social-media aggregate counts:
 
@@ -3000,6 +2918,8 @@ The exported file contains:
 informative_posts
 humanitarian counts
 emotion counts, when emotion.csv exists
+disaster_type counts, when zero-shot DeBERTa is used
+included_tweets with per-tweet emotion and disaster_type, when available
 representative_posts
 ```
 
@@ -3029,7 +2949,7 @@ Each JSONL row contains:
 
 - a stable event ID
 - a compact text document for embedding or retrieval
-- metadata summaries for satellite damage, humanitarian topics, and emotions
+- metadata summaries for satellite damage, topology validation, humanitarian topics, disaster type, and emotions
 - the original fused payload
 
 The default output is intentionally vector-database neutral:

@@ -22,6 +22,7 @@ def sentence_from_counts(title: str, counts: dict[str, int]) -> str:
 def build_document(event: dict[str, Any]) -> dict[str, Any]:
     satellite = event["satellite_assessment"]
     social = event["social_media"]
+    topology = satellite.get("topology_validation", {})
     humanitarian = social.get("humanitarian", {})
     emotion = social.get("emotion", {})
     disaster_type = social.get("disaster_type", {})
@@ -32,6 +33,11 @@ def build_document(event: dict[str, Any]) -> dict[str, Any]:
         f"{satellite.get('destroyed', 0)} destroyed, {satellite.get('major', 0)} major, "
         f"{satellite.get('minor', 0)} minor."
     )
+    if topology:
+        satellite_summary += (
+            f" Topology validated {topology.get('validated_buildings', 0)} building classifications "
+            f"with {float(topology.get('topology_cnn_agreement_rate', 0.0)):.0%} CNN agreement."
+        )
     social_summary = (
         f"{social.get('informative_posts', 0)} informative posts. "
         f"{sentence_from_counts('Disaster type', disaster_type)} "

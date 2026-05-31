@@ -66,6 +66,7 @@ def call_ollama(prompt: str, model: str, url: str) -> str:
 def template_report(event: dict[str, Any]) -> str:
     satellite = event["satellite_assessment"]
     social = event["social_media"]
+    topology = satellite.get("topology_validation", {})
     humanitarian = sorted_counts(social.get("humanitarian", {}))
     emotion = sorted_counts(social.get("emotion", {}))
     disaster_type = sorted_counts(social.get("disaster_type", {}))
@@ -91,6 +92,12 @@ def template_report(event: dict[str, Any]) -> str:
             f"Satellite imagery indicates {total} damaged buildings: "
             f"{satellite.get('destroyed', 0)} destroyed, {satellite.get('major', 0)} major damage, "
             f"and {satellite.get('minor', 0)} minor damage."
+        ),
+        (
+            f"Topology validation checked {topology.get('validated_buildings', 0)} building classifications "
+            f"with {float(topology.get('topology_cnn_agreement_rate', 0.0)):.0%} CNN agreement."
+            if topology
+            else "Topology validation was not available for this run."
         ),
         "",
         "2. Humanitarian impact",

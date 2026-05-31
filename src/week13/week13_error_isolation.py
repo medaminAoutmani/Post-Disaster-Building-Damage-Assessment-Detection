@@ -1,4 +1,4 @@
-"""Isolate ConvNeXt no-damage/minor-damage mistakes for Week 13."""
+"""Export ConvNeXt prediction regions for all-class Week 13 topology validation."""
 
 from __future__ import annotations
 
@@ -38,13 +38,14 @@ def load_checkpoint(path: Path, device: torch.device) -> ObjectDamageRepresentat
 
 @torch.no_grad()
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Week 13: isolate no_damage/minor_damage CNN mistakes.")
+    parser = argparse.ArgumentParser(description="Week 13: export all-class CNN predictions for topology validation.")
     parser.add_argument("--dataset-root", type=Path, default=Path("data") / "week11_buildings_week8_extra")
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--split", choices=["train", "val", "test"], default="val")
     parser.add_argument("--output-csv", type=Path, default=Path("results") / "week13_topology" / "error_regions.csv")
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--num-workers", type=int, default=0)
+    parser.add_argument("--errors-only", action="store_true", help="Write only misclassified samples.")
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -55,8 +56,21 @@ def main() -> None:
     args.output_csv.parent.mkdir(parents=True, exist_ok=True)
     with args.output_csv.open("w", newline="", encoding="utf-8") as file:
         writer = csv.writer(file)
-        writer.writerow(["metadata_path", "sample_dir", "label", "class_name", "prediction", "prediction_name", "p_no_damage", "p_minor_damage", "is_target_pair_error"])
-        target_pair = {0, 1}
+        writer.writerow(
+            [
+                "metadata_path",
+                "sample_dir",
+                "label",
+                "class_name",
+                "prediction",
+                "prediction_name",
+                "p_no_damage",
+                "p_minor_damage",
+                "p_major_damage",
+                "p_destroyed",
+                "is_error",
+            ]
+        )
         for batch in dataloader:
             logits = model(batch["pre"].to(device), batch["post"].to(device), batch["diff"].to(device))
             probs = F.softmax(logits, dim=1).cpu()
@@ -65,10 +79,10 @@ def main() -> None:
             for index in range(len(labels)):
                 label = int(labels[index].item())
                 prediction = int(predictions[index].item())
-                if label not in target_pair and prediction not in target_pair:
+                is_error = label != prediction
+                if args.errors_only and not is_error:
                     continue
                 sample_dir = str(Path(str(batch["metadata_path"][index])).parent)
-                is_pair_error = label in target_pair and prediction in target_pair and label != prediction
                 writer.writerow(
                     [
                         str(batch["metadata_path"][index]),
@@ -79,7 +93,9 @@ def main() -> None:
                         CLASS_NAMES[prediction],
                         float(probs[index, 0].item()),
                         float(probs[index, 1].item()),
-                        int(is_pair_error),
+                        float(probs[index, 2].item()),
+                        float(probs[index, 3].item()),
+                        int(is_error),
                     ]
                 )
 

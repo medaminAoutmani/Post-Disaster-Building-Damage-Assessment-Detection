@@ -22,7 +22,7 @@ DISASTER_LABELS = ["earthquake", "flood", "hurricane", "wildfire", "other disast
 DEFAULT_VAL_EVENTS = {"mexico_earthquake"}
 DEFAULT_TEST_EVENTS = {"srilanka_floods"}
 IGNORE_LABELS = {"", "nan", "none", "null", "dont_know_or_cant_judge", "don't_know_or_can't_judge"}
-DEFAULT_MODEL_NAME = "MoritzLaurer/deberta-v3-base-zeroshot-v1.1"
+DEFAULT_MODEL_NAME = "MoritzLaurer/deberta-v3-base-zeroshot-v2.0"
 
 
 def clean_label(value: str | None) -> str:

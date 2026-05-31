@@ -41,21 +41,27 @@ def main() -> None:
 
     threshold_payload = read_json(args.threshold_json)
     hybrid_payload = read_json(args.hybrid_metrics_json)
-    threshold_metrics = threshold_payload.get("metrics", {})
+    threshold_metrics = threshold_payload.get("topology_validation_metrics", threshold_payload.get("metrics", {}))
     confidence = float(threshold_metrics.get("f1", threshold_metrics.get("precision", 0.0)))
+    if "macro_f1" in threshold_metrics:
+        confidence = float(threshold_metrics["macro_f1"])
     validated = bool(threshold_payload) and confidence >= args.min_confidence
 
     output = {
         "validated": validated,
         "topology_confidence": confidence,
-        "role": "confidence_calibration_anomaly_detection_validation",
+        "role": "all_class_damage_classification_validation",
         "threshold_json": str(args.threshold_json),
         "hybrid_metrics_json": str(args.hybrid_metrics_json),
         "topology_threshold_metrics": threshold_metrics,
         "hybrid_summary": {
             "num_corrections": hybrid_payload.get("num_corrections"),
             "ambiguity_margin": hybrid_payload.get("ambiguity_margin"),
+            "correction_policy": hybrid_payload.get("correction_policy"),
+            "validated_samples": hybrid_payload.get("validated_samples"),
+            "topology_cnn_agreement_rate": hybrid_payload.get("topology_cnn_agreement_rate"),
             "baseline_macro_f1": hybrid_payload.get("baseline_metrics", {}).get("macro_f1"),
+            "topology_macro_f1": hybrid_payload.get("topology_metrics", {}).get("macro_f1"),
             "hybrid_macro_f1": hybrid_payload.get("hybrid_metrics", {}).get("macro_f1"),
         },
     }
