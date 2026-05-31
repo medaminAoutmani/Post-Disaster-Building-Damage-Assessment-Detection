@@ -1,0 +1,20 @@
+{
+  "source": "week12_preferred_convnext_tiny_gated",
+  "checkpoint": "results/week12/week12_convnext_tiny_gated_effective_no_sampler/checkpoints/week12_convnext_tiny_gated_ce_best.pt",
+  "dataset_root": "data/week11_buildings_week8_extra",
+  "split": "val",
+  "sample_filter": null,
+  "total_buildings": 12496,
+  "no_damage": 10863,
+  "minor": 60,
+  "major": 77,
+  "destroyed": 1496,
+  "total_damaged": 1633,
+  "confidence": 0.9126774337042538,
+  "class_confidence": {
+    "no_damage": 0.9184773511087917,
+    "minor_damage": 0.518864453335603,
+    "major_damage": 0.6016523938674432,
+    "destroyed": 0.9023654043754155
+  }
+}

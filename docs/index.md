@@ -1,4 +1,4 @@
-# Damage Detection Project
+# Multimodal Disaster Intelligence System
 
 ```{toctree}
 :maxdepth: 2

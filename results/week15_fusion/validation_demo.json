@@ -1,0 +1,41 @@
+{
+  "event": "validation_demo",
+  "created_at_utc": "2026-05-30T23:49:00.708604+00:00",
+  "satellite_assessment": {
+    "destroyed": 1496,
+    "major": 77,
+    "minor": 60,
+    "total_damaged": 1633,
+    "confidence": 0.9126774337042538
+  },
+  "social_media": {
+    "informative_posts": 922,
+    "humanitarian": {
+      "injured_dead": 110,
+      "rescue_efforts": 283,
+      "infrastructure_damage": 87,
+      "other_relevant_information": 404,
+      "vehicle_damage": 2,
+      "missing_or_found_people": 11,
+      "affected_people": 25
+    },
+    "emotion": {},
+    "representative_posts": [
+      "Mexico earthquake: Many children killed at primary school https://t.co/h0uPkN13mH https://t.co/0vGA5lj758",
+      "RT @AmichaiStein1: #BREAKING: Israel search &amp; rescue mission headed to Mexico after 7.1M earthquake https://t.co/lSd0e5ZVdx",
+      "NEWS: At least 200 people, including 21 children, have died in Mexico after an earthquake hit the country. https://t.co/Wzp6DSKdTs",
+      "RT @TravelLeisure: Deadly earthquake shakes Mexico City, causes buildings to crumble https://t.co/Ad7BYyR1b6 https://t.co/3Qu2wvMbWu",
+      "RT @Jentezen: We are praying for all the people in Mexico who are suffering from the earthquake. https://t.co/y55ZqWuOzX"
+    ]
+  },
+  "excluded_branches": {
+    "topology_tda": {
+      "excluded_from_final_fusion": true,
+      "reason": "Week 13 topology/TDA validation was retained as a negative-result analysis branch because it did not improve the preferred ConvNeXt-Tiny gated vision model."
+    }
+  },
+  "source_files": {
+    "satellite_json": "results/week15_inputs/satellite.json",
+    "social_json": "results/week15_inputs/social_val.json"
+  }
+}

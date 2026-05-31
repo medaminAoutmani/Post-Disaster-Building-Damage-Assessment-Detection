@@ -1,7 +1,5 @@
 # Post-Disaster Analytics Platform (PDA)
 
-[![Documentation Status](https://readthedocs.org/projects/YOUR_PROJECT/badge/?version=latest)](https://YOUR_PROJECT.readthedocs.io/en/latest/)
-
 A production-scale platform that integrates **satellite imagery**, **PDF documents**, and **social media** to produce integrated damage maps, expert commentary, and consolidated reports using ML and RAG.
 
 ## Architecture
