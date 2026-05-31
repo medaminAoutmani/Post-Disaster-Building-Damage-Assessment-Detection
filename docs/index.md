@@ -6,6 +6,7 @@
 
 readme
 project-report
+motivation
 ```
 
 ## Overview
