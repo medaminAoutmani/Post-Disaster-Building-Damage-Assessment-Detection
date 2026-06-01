@@ -27,7 +27,3 @@ This project investigates robust, scalable approaches for building-level damage 
 2. Build a retrieval-ready event knowledge base to support RAG-driven expert commentary and rapid reporting.
 3. Create a reproducible, containerized demo that stakeholders can run locally or in cloud environments.
 4. Evaluate societal impact: reduced response latency, improved resource allocation, and transparent model uncertainty reporting.
-
----
-
-If you want different wording or longer text derived from a specific PDF, attach it and I will adapt the content verbatim where allowed.
