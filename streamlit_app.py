@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import html
 import io
 import json
 import sys
@@ -28,7 +29,7 @@ from week13_topology_features import TOPOLOGY_FEATURE_NAMES, extract_topology_si
 from week14_zero_shot_text_classifier import DEFAULT_MODEL_NAME, build_zero_shot_social_payload
 from week15_fuse_event import build_event
 from week16_build_event_documents import build_document
-from week17_generate_situation_report import template_report
+from week17_generate_situation_report import build_prompt, call_ollama, template_report
 
 
 PREFERRED_CHECKPOINT = (
@@ -60,6 +61,226 @@ EMOTION_KEYWORDS = {
     "anger": ["angry", "outrage", "furious", "blame", "failed"],
     "hope": ["hope", "rescue", "help", "support", "relief", "safe", "praying"],
 }
+
+
+def inject_dark_theme() -> None:
+    st.markdown(
+        """
+        <style>
+        :root {
+            --app-bg: #090d14;
+            --panel: #101722;
+            --panel-soft: #151e2b;
+            --panel-line: rgba(148, 163, 184, 0.18);
+            --text-main: #e5edf7;
+            --text-muted: #94a3b8;
+            --accent: #38bdf8;
+            --accent-2: #34d399;
+            --warn: #f59e0b;
+        }
+        .stApp {
+            background:
+                radial-gradient(circle at 20% 0%, rgba(56, 189, 248, 0.14), transparent 32rem),
+                linear-gradient(180deg, #090d14 0%, #0c111a 45%, #090d14 100%);
+            color: var(--text-main);
+        }
+        [data-testid="stSidebar"] {
+            background: #0b1018;
+            border-right: 1px solid var(--panel-line);
+        }
+        [data-testid="stHeader"] {
+            background: rgba(9, 13, 20, 0.78);
+            backdrop-filter: blur(12px);
+        }
+        h1, h2, h3 {
+            color: var(--text-main);
+            letter-spacing: 0;
+        }
+        .app-hero {
+            padding: 1.25rem 0 1.4rem;
+            border-bottom: 1px solid var(--panel-line);
+            margin-bottom: 1.25rem;
+        }
+        .app-kicker {
+            color: var(--accent);
+            font-size: 0.78rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08rem;
+            margin-bottom: 0.35rem;
+        }
+        .app-title {
+            font-size: clamp(2rem, 4vw, 3.5rem);
+            font-weight: 800;
+            line-height: 1;
+            margin: 0;
+        }
+        .app-subtitle {
+            color: var(--text-muted);
+            max-width: 58rem;
+            margin-top: 0.8rem;
+            font-size: 1rem;
+        }
+        .metric-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 0.85rem;
+            margin: 0.8rem 0 1rem;
+        }
+        .metric-card {
+            background: linear-gradient(180deg, rgba(21, 30, 43, 0.96), rgba(16, 23, 34, 0.96));
+            border: 1px solid var(--panel-line);
+            border-radius: 8px;
+            padding: 0.9rem 1rem;
+            min-height: 6.2rem;
+            box-shadow: 0 14px 34px rgba(0, 0, 0, 0.18);
+        }
+        .metric-label {
+            color: var(--text-muted);
+            font-size: 0.74rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.06rem;
+        }
+        .metric-value {
+            color: var(--text-main);
+            font-size: 1.75rem;
+            font-weight: 800;
+            line-height: 1.2;
+            margin-top: 0.35rem;
+        }
+        .metric-note {
+            color: var(--text-muted);
+            font-size: 0.82rem;
+            margin-top: 0.35rem;
+        }
+        .section-panel {
+            background: rgba(16, 23, 34, 0.78);
+            border: 1px solid var(--panel-line);
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+        }
+        .report-box {
+            background: #0f1722;
+            border: 1px solid var(--panel-line);
+            border-radius: 8px;
+            padding: 1.2rem 1.35rem;
+            line-height: 1.72;
+            color: var(--text-main);
+        }
+        .report-box p {
+            margin: 0 0 1rem;
+        }
+        .stButton > button, .stDownloadButton > button {
+            border-radius: 8px;
+            border: 1px solid rgba(56, 189, 248, 0.36);
+            background: linear-gradient(180deg, #1d4ed8, #1554b7);
+            color: #f8fafc;
+            font-weight: 700;
+        }
+        .stButton > button:hover, .stDownloadButton > button:hover {
+            border-color: rgba(52, 211, 153, 0.7);
+            color: #ffffff;
+        }
+        [data-testid="stMetricValue"] {
+            color: var(--text-main);
+        }
+        @media (max-width: 900px) {
+            .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        }
+        @media (max-width: 560px) {
+            .metric-grid { grid-template-columns: 1fr; }
+            .metric-value { font-size: 1.45rem; }
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def pct(value: float | int | None) -> str:
+    if value is None:
+        return "N/A"
+    return f"{float(value) * 100:.1f}%"
+
+
+def render_metric_cards(cards: list[tuple[str, str, str]]) -> None:
+    pieces = ['<div class="metric-grid">']
+    for label, value, note in cards:
+        pieces.append(
+            '<div class="metric-card">'
+            f'<div class="metric-label">{html.escape(label)}</div>'
+            f'<div class="metric-value">{html.escape(value)}</div>'
+            f'<div class="metric-note">{html.escape(note)}</div>'
+            "</div>"
+        )
+    pieces.append("</div>")
+    st.markdown("".join(pieces), unsafe_allow_html=True)
+
+
+def report_to_html(report: str) -> str:
+    blocks = [block.strip() for block in report.strip().split("\n\n") if block.strip()]
+    rendered = ['<div class="report-box">']
+    for block in blocks:
+        safe = html.escape(block)
+        if safe.startswith("# "):
+            rendered.append(f"<h2>{safe[2:]}</h2>")
+        elif safe.startswith("## "):
+            rendered.append(f"<h3>{safe[3:]}</h3>")
+        else:
+            safe_paragraph = safe.replace("\n", "<br>")
+            rendered.append(f"<p>{safe_paragraph}</p>")
+    rendered.append("</div>")
+    return "".join(rendered)
+
+
+def average_nested_confidence(items: list[dict[str, Any]], keys: list[str]) -> float | None:
+    values = []
+    for item in items:
+        for key in keys:
+            if key in item:
+                try:
+                    values.append(float(item[key]))
+                except (TypeError, ValueError):
+                    pass
+    if not values:
+        return None
+    return sum(values) / len(values)
+
+
+def cv_precision_proxy(satellite_payload: dict[str, Any] | None) -> tuple[float | None, str]:
+    if not satellite_payload:
+        return None, "Waiting for satellite assessment"
+    topology = satellite_payload.get("topology_validation", {})
+    confidence = satellite_payload.get("confidence")
+    if topology:
+        agreement = float(topology.get("topology_cnn_agreement_rate", 0.0))
+        if confidence is not None:
+            return (float(confidence) + agreement) / 2, "Mean of CV confidence and topology agreement"
+        return agreement, "Topology agreement proxy"
+    if confidence is not None:
+        return float(confidence), "Vision-model confidence proxy"
+    predictions = satellite_payload.get("predictions", [])
+    nested = average_nested_confidence(predictions, ["confidence"])
+    return nested, "Mean crop confidence proxy" if nested is not None else "No confidence field found"
+
+
+def nlp_precision_proxy(social_payload: dict[str, Any] | None) -> tuple[float | None, str]:
+    if not social_payload:
+        return None, "Waiting for NLP assessment"
+    included = social_payload.get("included_tweets", [])
+    nested = average_nested_confidence(included, ["emotion_confidence", "disaster_type_confidence", "confidence", "agreement"])
+    if nested is not None:
+        return nested, "Mean zero-shot/LLM confidence proxy"
+    informative = float(social_payload.get("informative_posts", 0))
+    classified = float(social_payload.get("classified_posts", informative))
+    if classified > 0:
+        return informative / classified, "Informative coverage proxy"
+    representative = len(social_payload.get("representative_posts", []))
+    if representative:
+        return 1.0, "Keyword fallback produced representative posts"
+    return None, "No confidence field found"
 
 
 def decode_image(uploaded_file) -> np.ndarray:
@@ -298,6 +519,7 @@ def aggregate_tweets(tweets: list[str]) -> dict[str, Any]:
         emotion[emotion_label or "neutral"] += 1
     return {
         "source": "streamlit_keyword_social_aggregation",
+        "classified_posts": len(tweets),
         "informative_posts": informative,
         "humanitarian": dict(humanitarian),
         "emotion": dict(emotion),
@@ -326,7 +548,20 @@ def save_outputs(event: dict[str, Any], document: dict[str, Any], report: str) -
 
 
 st.set_page_config(page_title="Disaster Situation Report Generator", layout="wide")
-st.title("Disaster Situation Report Generator")
+inject_dark_theme()
+st.markdown(
+    """
+    <div class="app-hero">
+        <div class="app-kicker">Multimodal Disaster Intelligence</div>
+        <h1 class="app-title">Situation Report Generator</h1>
+        <div class="app-subtitle">
+            Fuse satellite damage detection with crisis-language signals, review model precision indicators,
+            and generate a longer human-readable report with local Ollama support.
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 with st.sidebar:
     st.subheader("Model Status")
@@ -358,12 +593,19 @@ with st.sidebar:
     else:
         st.warning("Topology prototype JSON not found. Fit Week 13 prototypes or upload topology JSON later.")
     st.caption("Final fusion uses satellite damage assessment + social-media context.")
+    st.divider()
+    st.subheader("Report LLM")
+    use_ollama = st.toggle("Generate report with Ollama", value=True)
+    ollama_model = st.text_input("Ollama model", value="llama3")
+    ollama_url = st.text_input("Ollama URL", value="http://localhost:11434/api/generate")
+    st.caption("If Ollama is unavailable, the app falls back to the local paragraph report.")
 
 event_id = st.text_input("Event ID", value="validation_demo")
 
 left, right = st.columns(2)
 
 with left:
+    st.markdown('<div class="section-panel">', unsafe_allow_html=True)
     st.header("Satellite Damage")
     mode = st.radio("Input mode", ["Manual counts", "Upload building crop pairs", "Upload satellite JSON"], horizontal=False)
     satellite_payload: dict[str, Any] | None = None
@@ -402,9 +644,21 @@ with left:
         satellite_payload = st.session_state.get("satellite_payload")
 
     if satellite_payload:
-        st.json(satellite_payload)
+        cv_score, cv_note = cv_precision_proxy(satellite_payload)
+        render_metric_cards(
+            [
+                ("CV Precision", pct(cv_score), cv_note),
+                ("Damaged Buildings", str(satellite_payload.get("total_damaged", satellite_payload.get("destroyed", 0) + satellite_payload.get("major", 0) + satellite_payload.get("minor", 0))), "Minor + major + destroyed"),
+                ("Destroyed", str(satellite_payload.get("destroyed", 0)), "Highest severity class"),
+                ("Model Confidence", pct(satellite_payload.get("confidence")), "Mean vision confidence"),
+            ]
+        )
+        with st.expander("Satellite payload JSON"):
+            st.json(satellite_payload)
+    st.markdown("</div>", unsafe_allow_html=True)
 
 with right:
+    st.markdown('<div class="section-panel">', unsafe_allow_html=True)
     st.header("Social Media")
     social_mode = st.radio(
         "Social input mode",
@@ -446,13 +700,26 @@ with right:
             social_payload = aggregate_tweets(tweets) if tweets else None
 
     if social_payload:
-        st.json(social_payload)
+        nlp_score, nlp_note = nlp_precision_proxy(social_payload)
+        humanitarian_top = sorted_counts(social_payload.get("humanitarian", {}))
+        emotion_top = sorted_counts(social_payload.get("emotion", {}))
+        render_metric_cards(
+            [
+                ("NLP Precision", pct(nlp_score), nlp_note),
+                ("Posts", str(social_payload.get("classified_posts", social_payload.get("informative_posts", 0))), "Classified social posts"),
+                ("Top Topic", humanitarian_top[0][0].replace("_", " ") if humanitarian_top else "N/A", "Dominant humanitarian label"),
+                ("Top Emotion", emotion_top[0][0].replace("_", " ") if emotion_top else "N/A", "Dominant sentiment label"),
+            ]
+        )
+        with st.expander("Social payload JSON"):
+            st.json(social_payload)
         st.download_button(
             "Download Week 15 social JSON",
             json.dumps(social_payload, indent=2),
             file_name=f"{event_id}_social_week15_input.json",
             mime="application/json",
         )
+    st.markdown("</div>", unsafe_allow_html=True)
 
 st.header("Situation Report")
 generate = st.button("Generate Report", type="primary", disabled=not (event_id and satellite_payload and social_payload))
@@ -465,12 +732,20 @@ if generate and satellite_payload and social_payload:
         {"satellite_source": mode, "social_source": social_mode, "social_json": str(social_json.relative_to(ROOT))},
     )
     document = build_document(event)
-    report = template_report(event)
+    report = ""
+    if use_ollama:
+        try:
+            with st.spinner(f"Generating a longer report with Ollama ({ollama_model})..."):
+                report = call_ollama(build_prompt(event), ollama_model, ollama_url)
+        except Exception as exc:
+            st.warning(f"Ollama generation failed, using local paragraph report instead: {exc}")
+    if not report:
+        report = template_report(event)
     event_json, doc_json, report_md = save_outputs(event, document, report)
 
     tab_report, tab_event, tab_document = st.tabs(["Report", "Fusion JSON", "RAG Document"])
     with tab_report:
-        st.markdown(report)
+        st.markdown(report_to_html(report), unsafe_allow_html=True)
         st.download_button("Download report", report, file_name=f"{event_id}_report.md")
     with tab_event:
         st.json(event)

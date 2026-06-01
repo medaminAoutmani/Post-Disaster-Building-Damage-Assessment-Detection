@@ -48,9 +48,14 @@ def count_summary(counts: list[tuple[str, int]], empty_message: str) -> str:
 
 def build_prompt(event: dict[str, Any]) -> str:
     return (
-        "Generate a concise disaster situation report with these sections: "
-        "Physical damage assessment, Humanitarian impact, Public sentiment, "
-        "Recommended priorities, Confidence assessment.\n\n"
+        "You are a disaster-response analyst writing for emergency coordinators. "
+        "Generate a long, human-sounding disaster situation report in paragraph layout. "
+        "Use clear section headings, but write the content as connected paragraphs rather than bullet lists. "
+        "The report should be professional, specific, and cautious about uncertainty. Include these sections: "
+        "Executive overview, Physical damage assessment, Humanitarian impact, Public sentiment, "
+        "Operational priorities, and Confidence assessment. "
+        "Mention the satellite/CV precision or confidence signals and the NLP/social-media confidence signals when present. "
+        "Do not invent locations, casualty numbers, or field facts that are not supported by the input JSON.\n\n"
         f"Input JSON:\n{json.dumps(event, indent=2)}"
     )
 
@@ -82,42 +87,52 @@ def template_report(event: dict[str, Any]) -> str:
         priority_candidates.append("Public communication")
     priority_candidates.append("Cross-check satellite and field reports")
 
-    lines = [
-        "DISASTER SITUATION REPORT",
-        "",
-        f"Event: {event['event'].replace('_', ' ').title()}",
-        "",
-        "1. Physical damage assessment",
+    topology_sentence = (
+        f"Topology validation was also applied to {topology.get('validated_buildings', 0)} building classifications, "
+        f"with an agreement rate of {float(topology.get('topology_cnn_agreement_rate', 0.0)):.0%} against the CNN predictions. "
+        "This should be read as a structural consistency check rather than a replacement for the vision model."
+        if topology
+        else "Topology validation was not available for this run, so the visual assessment relies on the satellite model output and any manual counts provided in the payload."
+    )
+    priorities = ", ".join(dict.fromkeys(priority_candidates))
+    event_name = event["event"].replace("_", " ").title()
+    vision_confidence = float(satellite.get("confidence", 0.0))
+
+    paragraphs = [
+        "# Disaster Situation Report",
+        f"## Executive overview\n\nThe fused assessment for {event_name} indicates a significant damage signal across the satellite-derived building inventory, with {total} buildings categorized as damaged. The current event picture combines visual damage evidence with social-media indicators, so the report should be treated as an operational summary for triage rather than a final field-verified assessment. The strongest available confidence signal is {label.lower()}, with the vision branch reporting approximately {vision_confidence:.0%} confidence where that value is present.",
         (
-            f"Satellite imagery indicates {total} damaged buildings: "
-            f"{satellite.get('destroyed', 0)} destroyed, {satellite.get('major', 0)} major damage, "
-            f"and {satellite.get('minor', 0)} minor damage."
+            "## Physical damage assessment\n\n"
+            f"The satellite assessment identifies {satellite.get('destroyed', 0)} destroyed buildings, "
+            f"{satellite.get('major', 0)} buildings with major damage, and {satellite.get('minor', 0)} buildings with minor damage. "
+            "Destroyed and major-damage detections should receive the earliest review because they are the clearest indicators of severe structural impact and possible access constraints. "
+            f"{topology_sentence}"
         ),
         (
-            f"Topology validation checked {topology.get('validated_buildings', 0)} building classifications "
-            f"with {float(topology.get('topology_cnn_agreement_rate', 0.0)):.0%} CNN agreement."
-            if topology
-            else "Topology validation was not available for this run."
+            "## Humanitarian impact\n\n"
+            f"The social-media branch analyzed {social.get('informative_posts', 0)} informative posts. "
+            f"The most visible disaster-type signal is {count_summary(disaster_type, 'not available')}, while the leading humanitarian themes are {count_summary(humanitarian, 'not available')}. "
+            "These topics suggest where responders may need to look for public requests, infrastructure disruption reports, and community-level needs, but they should be cross-checked with official channels before resource decisions are finalized."
         ),
-        "",
-        "2. Humanitarian impact",
-        f"Analysis of {social.get('informative_posts', 0)} informative social-media posts indicates the likely disaster type is "
-        + count_summary(disaster_type, "not available")
-        + ". The strongest humanitarian topics are "
-        + count_summary(humanitarian, "not available")
-        + ".",
-        "",
-        "3. Public sentiment",
-        "Dominant emotions are " + count_summary(emotion, "not available") + ".",
-        "",
-        "4. Recommended priorities",
-        *[f"{index}. {item}" for index, item in enumerate(dict.fromkeys(priority_candidates), start=1)],
-        "",
-        "5. Confidence assessment",
-        f"Vision-model confidence: {float(satellite.get('confidence', 0.0)):.0%}.",
-        f"Overall confidence: {label}",
+        (
+            "## Public sentiment\n\n"
+            f"The dominant emotional signals are {count_summary(emotion, 'not available')}. "
+            "A strong fear, anger, or sadness signal can indicate uncertainty, perceived delays, or unresolved safety concerns among affected residents. "
+            "Public communication should therefore be factual, frequent, and careful to separate confirmed information from model-derived estimates."
+        ),
+        (
+            "## Operational priorities\n\n"
+            f"The recommended near-term priorities are {priorities}. "
+            "Response teams should first verify the most severe visual detections, compare them with field reports, and then use social-media clusters to guide situational awareness around affected people, rescue needs, and infrastructure access. "
+            "The fusion output is most useful as a prioritization layer: it helps decide where human review should begin, not where it should end."
+        ),
+        (
+            "## Confidence assessment\n\n"
+            f"Overall confidence is assessed as {label.lower()}. The computer-vision component reports {vision_confidence:.0%} confidence when available, and the NLP branch contributes supporting evidence through the volume and consistency of classified posts. "
+            "Because both branches can be affected by missing imagery, class imbalance, duplicated posts, and incomplete ground truth, the safest interpretation is to use this report as an early warning and coordination product that remains open to revision as verified field information arrives."
+        ),
     ]
-    return "\n".join(lines)
+    return "\n\n".join(paragraphs)
 
 
 def main() -> None:
