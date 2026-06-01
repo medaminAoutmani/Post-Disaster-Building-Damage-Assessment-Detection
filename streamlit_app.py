@@ -205,6 +205,10 @@ def pct(value: float | int | None) -> str:
     return f"{float(value) * 100:.1f}%"
 
 
+def sorted_counts(counts: dict[str, int]) -> list[tuple[str, int]]:
+    return sorted(counts.items(), key=lambda item: item[1], reverse=True)
+
+
 def render_metric_cards(cards: list[tuple[str, str, str]]) -> None:
     pieces = ['<div class="metric-grid">']
     for label, value, note in cards:
